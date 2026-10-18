@@ -110,6 +110,25 @@
   @keyframes blink { to { visibility: hidden; } }
   @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
 
+  /* Animated demo (demo.js): an 80x24 terminal. The font shrinks with the
+     viewport so all 80 columns fit without horizontal scrolling. */
+  .demo { overflow: hidden; }
+  .demo pre {
+    overflow: hidden; white-space: pre; padding: 12px 14px;
+    width: fit-content; max-width: 100%;
+    font-size: clamp(5px, calc((100vw - 62px) / 48.5), 14px); line-height: 1.3;
+  }
+  .demo .inv { background: var(--sel); color: var(--sel-fg); }
+  .demo .b { font-weight: bold; }
+  .demo .d { color: var(--dim); }
+  .demo .k { color: var(--accent); }
+  .demo .ok, .demo .rx { color: var(--fg); }
+  .demo .tx, .demo .h { color: var(--hot); }
+  .demo .w { color: var(--warn); }
+  .demo .sel { background: var(--accent); color: var(--bg); }
+  .demo .flash, .demo .key-down { background: var(--warn); color: var(--bg); font-weight: bold; }
+  .caption { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+
   footer { margin-top: 56px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 14px; }
   footer a { color: var(--dim); }
 </style>
@@ -142,13 +161,32 @@
   </div>
 </section>
 
-<section class="screen" aria-label="screenshot of the server list">
-<pre><span class="k"> scat · Servers                                               2 servers · 12:03:55</span>
-   NAME             TARGET                    CPU   MEM   LOAD   UPTIME STATUS
-<span class="c"> ── production ──</span>
-<span class="w"> ▶●</span> web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
-<span class="c"> ── ungrouped ──</span>
-<span class="h">  ●</span> db1             db.internal via bastion     -     -      -        - authentication failed - …</pre>
+<section class="screen demo" aria-labelledby="demo-caption">
+<pre id="demo-screen" aria-hidden="true"><span class="inv"> scat · Servers                                           </span><span class="inv">6 servers · 12:03:55  </span>
+<span class="d">   NAME               CPU   MEM   LOAD   UPTIME STATUS</span>                          
+<span class="k b"> ── lab ──</span>                                                                      
+ <span class="ok">●</span> <span class="b">lab-ci          </span>   71%   72%   3.30    4d 7h <span class="d">Linux 6.8.0                     </span>
+ <span class="ok">●</span> <span class="b">lab-edge        </span>   11%   34%   0.23   31d 2h <span class="d">Linux 6.6.0                     </span>
+<span class="k b"> ── production ──</span>                                                               
+ <span class="ok">●</span> <span class="b">db-01           </span>   47%   80%   5.90   88d 1h <span class="d">Linux 6.8.0                     </span>
+ <span class="ok">●</span> <span class="b">web-01          </span>   27%   46%   0.92   12d 3h <span class="d">Linux 6.8.0                     </span>
+<span class="sel">▶</span><span class="sel ok">●</span><span class="sel"> </span><span class="sel b">web-02          </span><span class="sel">   27%   55%   0.93   12d 3h </span><span class="sel d">Linux 6.8.0                     </span>
+<span class="k b"> ── ungrouped ──</span>                                                                
+ <span class="ok">●</span> <span class="b">backup-01       </span>    9%   27%   0.26  140d 9h <span class="d">Linux 6.1.0                     </span>
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+<span class="inv"> </span><span class="inv b">↑↓</span><span class="inv"> move </span><span class="inv"> </span><span class="inv b">⏎</span><span class="inv"> details </span><span class="inv"> </span><span class="inv b">a</span><span class="inv"> add </span><span class="inv"> </span><span class="inv b">e</span><span class="inv"> edit </span><span class="inv"> </span><span class="inv b">d</span><span class="inv"> delete </span><span class="inv"> </span><span class="inv b">s</span><span class="inv"> ssh </span><span class="inv"> </span><span class="inv b">r</span><span class="inv"> refresh </span><span class="inv"> </span><span class="inv b">?</span><span class="inv"> help </span><span class="inv"> </span><span class="inv b">q</span><span class="inv"> quit </span><span class="inv"> </span></pre>
+<p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
 
 <h2>what it does</h2>
@@ -211,6 +249,7 @@
 </footer>
 
 </div>
+<script src="demo.js" defer></script>
 <script>
 (function () {
   var root = document.documentElement;
