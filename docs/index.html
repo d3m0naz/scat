@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scat · server watch over SSH</title>
+<meta name="description" content="scat: a Bash terminal UI to watch and manage servers over SSH. Keys only, no passwords stored.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%90%BE%3C/text%3E%3C/svg%3E">
+<style>
+  /* Colours are tokens on :root. Light = green phosphor on paper, dark = on black. */
+  :root {
+    --bg: #f4f1e6;
+    --fg: #1d4d1d;
+    --dim: #6b7a5c;
+    --rule: #b9b49a;
+    --accent: #0a6a8a;      /* VGA cyan */
+    --hot: #a3262b;         /* VGA red */
+    --warn: #8a6100;        /* amber */
+    --sel: #1d4d1d;
+    --sel-fg: #f4f1e6;
+    --code-bg: #e7e3d0;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000000;
+      --fg: #33ff66;
+      --dim: #1f9c44;
+      --rule: #1a5c2a;
+      --accent: #55ffff;
+      --hot: #ff5555;
+      --warn: #ffb000;
+      --sel: #33ff66;
+      --sel-fg: #000000;
+      --code-bg: #07140b;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000;
+    --fg: #33ff66;
+    --dim: #1f9c44;
+    --rule: #1a5c2a;
+    --accent: #55ffff;
+    --hot: #ff5555;
+    --warn: #ffb000;
+    --sel: #33ff66;
+    --sel-fg: #000000;
+    --code-bg: #07140b;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.5 ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 48px; }
+
+  header { padding: 24px 0 8px; border-bottom: 1px solid var(--rule); }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .bar .title { color: var(--sel-fg); background: var(--sel); padding: 0 8px; font-weight: bold; }
+  .toggle {
+    font: inherit; color: var(--fg); background: transparent;
+    border: 1px solid var(--fg); padding: 2px 10px; cursor: pointer;
+  }
+  .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .hero { display: flex; gap: 24px; align-items: center; padding: 24px 0; flex-wrap: wrap; }
+  .paw { width: 120px; height: 120px; flex: none; color: var(--accent); }
+  h1 { margin: 0; font-size: 32px; letter-spacing: 0.04em; color: var(--accent); }
+  .tag { margin: 6px 0 0; color: var(--dim); }
+
+  h2 {
+    font-size: 18px; margin: 40px 0 12px; color: var(--hot);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  h2::before { content: "== "; color: var(--dim); }
+  h2::after { content: " =="; color: var(--dim); }
+  p, li { max-width: 72ch; }
+  a { color: var(--accent); }
+  ul { padding-left: 1.2em; }
+  li { margin: 4px 0; }
+  li::marker { color: var(--warn); }
+  code, kbd {
+    background: var(--code-bg); color: var(--warn);
+    padding: 0 4px; border: 1px solid var(--rule); font-size: 0.95em;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--rule);
+    padding: 12px 14px; overflow-x: auto; color: var(--fg); margin: 12px 0;
+    font-size: 14px; line-height: 1.4;
+  }
+  pre .p { color: var(--dim); user-select: none; }
+  pre .c { color: var(--dim); }
+  pre .k { color: var(--accent); }
+  pre .w { color: var(--warn); }
+  pre .h { color: var(--hot); }
+  table { border-collapse: collapse; width: 100%; max-width: 72ch; margin: 12px 0; }
+  th, td { text-align: left; padding: 4px 10px 4px 0; border-bottom: 1px dashed var(--rule); vertical-align: top; }
+  th { color: var(--warn); font-weight: normal; }
+  td:first-child { white-space: nowrap; color: var(--accent); }
+
+  .screen { overflow-x: auto; }
+  .screen pre { margin: 0; border-color: var(--fg); }
+  .blink { animation: blink 1.1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+
+  footer { margin-top: 56px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 14px; }
+  footer a { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="bar">
+    <span class="title">scat</span>
+    <button class="toggle" id="theme" type="button" aria-pressed="false">[ dark mode: off ]</button>
+  </div>
+</header>
+
+<section class="hero" aria-labelledby="top">
+  <svg class="paw" viewBox="0 0 120 120" role="img" aria-label="cat paw logo">
+    <title>cat paw</title>
+    <g fill="currentColor">
+      <ellipse cx="60" cy="78" rx="30" ry="26"/>
+      <ellipse cx="26" cy="46" rx="11" ry="14" transform="rotate(-18 26 46)"/>
+      <ellipse cx="44" cy="26" rx="11" ry="15" transform="rotate(-6 44 26)"/>
+      <ellipse cx="76" cy="26" rx="11" ry="15" transform="rotate(6 76 26)"/>
+      <ellipse cx="94" cy="46" rx="11" ry="14" transform="rotate(18 94 46)"/>
+    </g>
+  </svg>
+  <div>
+    <h1 id="top">scat</h1>
+    <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
+    <p class="tag"><span class="blink">_</span></p>
+  </div>
+</section>
+
+<section class="screen" aria-label="screenshot of the server list">
+<pre><span class="k"> scat · Servers                                               2 servers · 12:03:55</span>
+   NAME             TARGET                    CPU   MEM   LOAD   UPTIME STATUS
+<span class="c"> ── production ──</span>
+<span class="w"> ▶●</span> web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
+<span class="c"> ── ungrouped ──</span>
+<span class="h">  ●</span> db1             db.internal via bastion     -     -      -        - authentication failed - …</pre>
+</section>
+
+<h2>what it does</h2>
+<ul>
+  <li>Keeps a list of servers, grouped and with optional jump hosts.</li>
+  <li>Shows status and live metrics: CPU, memory, load, uptime, disks, network.</li>
+  <li>Lists processes, sorts them and sends SIGTERM after a confirmation.</li>
+  <li>Opens an SSH shell, or runs saved commands on a server.</li>
+  <li>Runs one-shot checks from scripts: <code>scat --check web1</code>.</li>
+</ul>
+
+<h2>principles</h2>
+<ul>
+  <li><strong>Keys only.</strong> scat never asks for or stores passwords. Monitoring uses <code>ssh -o BatchMode=yes</code>.</li>
+  <li><strong>Plain config.</strong> Files are parsed as data, never evaluated, and written with mode 600.</li>
+  <li><strong>Plain Bash.</strong> No runtime dependencies beyond Bash 5 and tools that ship with macOS.</li>
+</ul>
+
+<h2>install</h2>
+<p>Requires macOS and Bash 5 from Homebrew. The system <code>/bin/bash</code> is 3.2 and is not supported.</p>
+<pre><span class="p">$ </span>brew install bash
+<span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
+<span class="p">$ </span>scat --help</pre>
+<p>The installer checks the SHA-256 of the release archive before it installs anything. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+
+<h2>keys</h2>
+<table>
+  <tr><td>j / k, arrows</td><td>move</td></tr>
+  <tr><td>Enter</td><td>open</td></tr>
+  <tr><td>s</td><td>ssh shell</td></tr>
+  <tr><td>p</td><td>processes</td></tr>
+  <tr><td>x</td><td>snippets</td></tr>
+  <tr><td>r</td><td>refresh now</td></tr>
+  <tr><td>?</td><td>help</td></tr>
+  <tr><td>q / Esc</td><td>back, quit on the list</td></tr>
+</table>
+
+<h2>remote hosts</h2>
+<p>Remote hosts need a POSIX <code>sh</code> with <code>awk</code>, <code>ps</code> and <code>df</code>. Linux and FreeBSD (including OPNsense) give full metrics. macOS hosts work on a best-effort basis.</p>
+
+<h2>links</h2>
+<ul>
+  <li><a href="https://github.com/d3m0naz/scat">source on GitHub</a></li>
+  <li><a href="https://github.com/d3m0naz/scat/releases">releases</a></li>
+  <li><a href="https://github.com/d3m0naz/scat/blob/main/README.md">README</a></li>
+</ul>
+
+<footer>
+  <p>scat 0.1.0 · MIT licence · &copy; 2026 d3m0naz</p>
+</footer>
+
+</div>
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById("theme");
+  var key = "scat-theme";
+
+  function current() {
+    var t = root.getAttribute("data-theme");
+    if (t) return t;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  function show() {
+    var dark = current() === "dark";
+    btn.textContent = "[ dark mode: " + (dark ? "on" : "off") + " ]";
+    btn.setAttribute("aria-pressed", dark ? "true" : "false");
+  }
+
+  try {
+    var saved = localStorage.getItem(key);
+    if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved);
+  } catch (e) { /* storage blocked: follow the system setting */ }
+
+  btn.addEventListener("click", function () {
+    var next = current() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(key, next); } catch (e) { /* ignore */ }
+    show();
+  });
+
+  show();
+})();
+</script>
+</body>
+</html>
