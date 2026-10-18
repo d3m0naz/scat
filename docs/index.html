@@ -131,7 +131,10 @@
   .demo-toggle { margin-top: 8px; }
   .copy-btn { margin: -4px 0 4px; }
   /* Secondary text under the install box: smaller and dimmed. */
-  .install-note { margin: 6px 0 24px; font-size: 14px; color: var(--dim); }
+  .install-note { margin: 6px 0 0; font-size: 14px; color: var(--dim); }
+  .install-more { margin: 2px 0 24px; }
+  .install-more summary { font-size: 14px; color: var(--dim); cursor: pointer; }
+  .install-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .install-note code { color: var(--dim); }
   .sr-only {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -175,7 +178,11 @@
 <pre><span class="p">$ </span><span id="install-cmd">curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash</span></pre>
 <button class="toggle copy-btn" type="button" data-copy="install-cmd" aria-label="Copy install command" hidden>[ copy ]</button>
 <span class="sr-only" id="copy-status" aria-live="polite"></span>
-<p class="install-note">This installs scat 0.2.0 (released <time datetime="2026-10-18">2026-10-18</time>). The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see <a href="#bash-5">“bash 5 or newer”</a> below. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+<p class="install-note">This installs scat 0.2.0 (released <time datetime="2026-10-18">2026-10-18</time>).</p>
+<details class="install-more">
+<summary>read more</summary>
+<p class="install-note">The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see <a href="#bash-5">“bash 5 or newer”</a> below. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+</details>
 
 <section class="screen demo" aria-labelledby="demo-caption">
 <pre id="demo-screen" aria-hidden="true"><span class="inv"> scat · Servers                                           </span><span class="inv">6 servers · 12:03:55  </span>
