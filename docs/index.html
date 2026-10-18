@@ -175,7 +175,7 @@
 <pre><span class="p">$ </span><span id="install-cmd">curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash</span></pre>
 <button class="toggle copy-btn" type="button" data-copy="install-cmd" aria-label="Copy install command" hidden>[ copy ]</button>
 <span class="sr-only" id="copy-status" aria-live="polite"></span>
-<p class="install-note">This installs scat 0.2.0 (released <time datetime="2026-10-18">2026-10-18</time>). The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see the next section. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+<p class="install-note">This installs scat 0.2.0 (released <time datetime="2026-10-18">2026-10-18</time>). The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see <a href="#bash-5">“bash 5 or newer”</a> below. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
 
 <section class="screen demo" aria-labelledby="demo-caption">
 <pre id="demo-screen" aria-hidden="true"><span class="inv"> scat · Servers                                           </span><span class="inv">6 servers · 12:03:55  </span>
@@ -206,7 +206,7 @@
 <p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
 
-<h2>bash 5 or newer</h2>
+<h2 id="bash-5">bash 5 or newer</h2>
 <p>scat is a Bash script that runs on the machine you work on. It is written for any system with Bash 5 or newer and the usual Unix tools. So far it has been run on macOS (Apple Silicon); Linux and FreeBSD as the machine running scat have not been tested yet. Check your version with <code>bash --version</code>.</p>
 <table>
   <tr><th>system</th><th>how to get Bash 5</th></tr>
