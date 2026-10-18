@@ -302,31 +302,34 @@ eq "detail view order" ordered "$(order_of <<<"$detail")"
 net_rows() {
     awk '/^  Network/ { on = 1; next } on && /^ *$/ { exit } on' | sed 's/ *$//'
 }
-r32=$(printf '░%.0s' {1..32}) r33=$(printf '░%.0s' {1..33})
-pad=$(printf '%14s' '')
-eq "detail: rx row above tx row, name only on rx (100 cols: 33-cell bars)" "  eth0        rx   0.52 MB/s  ▏$r32
-${pad}tx   0.01 MB/s  ▏$r32
-  wlan0       rx   0.00 MB/s  $r33
-${pad}tx   0.00 MB/s  $r33" "$(net_rows <<<"$detail")"
-eq "detail: 2 rows per interface" 4 "$(net_rows <<<"$detail" | grep -c .)"
+r15=$(printf '░%.0s' {1..15}) r16=$(printf '░%.0s' {1..16})
+eq "detail: one row per interface, split bar (100 cols: 16 rx + gap + 16 tx cells)" "  eth0        ▏$r15 ▏$r15 rx   0.52  tx   0.01 MB/s
+  wlan0       $r16 $r16 rx   0.00  tx   0.00 MB/s" "$(net_rows <<<"$detail")"
+eq "detail: 1 row per interface" 2 "$(net_rows <<<"$detail" | grep -c .)"
+# Same columns as the Disks rows: bar start, and values where the disk
+# percentage field starts (bar column + 1 space).
+dl=$(grep '^  /data ' <<<"$detail" | sed $'s/\e\\[[0-9;]*[mK]//g')
+nl=$(net_rows <<<"$detail" | sed -n 2p)
+pre=${dl%%[█░]*}; dbar=${#pre}; rest=${dl:dbar}; bars=${rest%% *}
+pre=${nl%%[░▏█]*}; nbar=${#pre}; npre=${nl%%rx *}
+eq "detail: network bar and values in the Disks columns" "$dbar $((dbar + ${#bars} + 1))" "$nbar ${#npre}"
 detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=60; sc_draw_detail web2)
-eq "detail at 60 columns: rows 50 wide (20-cell bars)" "50 50 50 50" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
+eq "detail at 60 columns: rows exactly 60 wide, no wrap" "60 60" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
+eq "detail at 60 columns: values complete" "rx   0.52  tx   0.01 MB/s" "$(net_rows <<<"$detail" | head -n 1 | grep -o 'rx .*')"
 eq "detail order at 60 columns" ordered "$(order_of <<<"$detail")"
 detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=110; sc_draw_detail web2)
-eq "detail at 110 columns: rows 66 wide (36-cell bars)" "66 66 66 66" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
-eq "network section height: heading + 2 per interface + blank" 6 "$(awk '/^  Network/ { on = 1 } on { n++ } on && /^ *$/ { exit } END { print n }' <<<"$detail")"
+eq "detail at 110 columns: rows 76 wide (36-cell bar column)" "76 76" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
+eq "network section height: heading + 1 per interface + blank" 4 "$(awk '/^  Network/ { on = 1 } on { n++ } on && /^ *$/ { exit } END { print n }' <<<"$detail")"
 summary=$(sc_print_summary web2)
 eq "--check order" ordered "$(order_of <<<"$summary")"
 r9=$(printf '░%.0s' {1..9}) r10=$(printf '░%.0s' {1..10})
-eq "--check: rx above tx, 10-cell bars" "  Network   eth0       rx   0.52 MB/s  ▏$r9
-                       tx   0.01 MB/s  ▏$r9
-  Network   wlan0      rx   0.00 MB/s  $r10
-                       tx   0.00 MB/s  $r10" "$(grep -E '^  Network|^ {23}tx' <<<"$summary")"
-printf 'rc=0\nts=1\nos=FreeBSD\nnet_note=per-interface rates are not collected on FreeBSD\n' >"$TMP/res3"
+eq "--check: one line per interface, split 10+10 bar" "  Network   eth0       ▏$r9 ▏$r9  rx   0.52  tx   0.01 MB/s
+  Network   wlan0      $r10 $r10  rx   0.00  tx   0.00 MB/s" "$(grep '^  Network' <<<"$summary")"
+printf 'rc=0\nts=1\nos=OpenBSD\nnet_note=per-interface rates are not collected on OpenBSD\n' >"$TMP/res3"
 sc_metrics_load web2 "$TMP/res3"
-eq "--check shows the limitation" "  Network   per-interface rates are not collected on FreeBSD" "$(sc_print_summary web2 | grep Network)"
+eq "--check shows the limitation" "  Network   per-interface rates are not collected on OpenBSD" "$(sc_print_summary web2 | grep Network)"
 detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail web2)
-eq "detail shows the limitation" 1 "$(grep -c '^  per-interface rates are not collected on FreeBSD' <<<"$detail")"
+eq "detail shows the limitation" 1 "$(grep -c '^  per-interface rates are not collected on OpenBSD' <<<"$detail")"
 
 section "network rate bars (100 MB/s = full bar)"
 bar() { # rate width -> "filled|rest|units"
@@ -348,10 +351,19 @@ for v in 0 1 600000 12500000 33333333 50000000 99999999 100000000 150000000; do
     done
 done
 eq "bar is always exactly the requested width" "$(printf '1%.0s' {1..27})" "$widths"
-SC_DET_LW=12 SC_DET_BW=20 SC_COLS=60; sc_netif_bar_width; eq "bar width at 60 columns (capped at SC_DET_BW)" 20 "$REPLY"
-SC_DET_BW=40 SC_COLS=200; sc_netif_bar_width; eq "bar width capped like other bars" 40 "$REPLY"
-SC_DET_BW=40 SC_COLS=50; sc_netif_bar_width; eq "bar width fills what is left" 20 "$REPLY"
-SC_DET_BW=10 SC_COLS=30; sc_netif_bar_width; eq "bar width minimum" 4 "$REPLY"
+split() { # rx tx width -> bar without color codes
+    sc_netif_bar "$1" "$2" "$3"
+    sed $'s/\e\\[[0-9;]*m//g' <<<"$REPLY"
+}
+eq "split bar: rx left (9), gap, tx right (10) at width 20" "████▌░░░░ ▏░░░░░░░░░" "$(split 50000000 1 20)"
+eq "split bar: each half has its own 100 MB/s scale" "█████████ ██████████" "$(split 100000000 150000000 20)"
+widths=
+for w in 10 20 21 33 36 40; do l=$(split 12500000 600000 "$w"); widths+="${#l} "; done
+eq "split bar is exactly the bar column wide" "10 20 21 33 36 40 " "$widths"
+sc_netif_bar 1 1 6
+eq "split bar colors: rx green before tx red" 1 "$([[ $REPLY == *"$C_RX"*" $C_TX"* ]] && echo 1)"
+sc_netif_values 523000 12000; eq "values: unit once at the end" "rx   0.52  tx   0.01 MB/s" "$REPLY"
+sc_netif_values 125000000 x; eq "values: 1 GbE line rate fits 25 columns" "rx 125.00  tx      - MB/s" "$REPLY"
 SC_COLS=80
 SC_SET[ascii]=1; sc_glyphs_init
 eq "ascii: no eighth cells" 0 "${#SC_G_EIGHTHS[@]}"
@@ -361,8 +373,7 @@ eq "ascii: 150 MB/s clamped" "##########||10" "$(bar 150000000 10)"
 eq "ascii: 12.5 MB/s rounds to whole cells" "#|.........|1" "$(bar 12500000 10)"
 eq "ascii: tiny rate still visible" "#|.........|1" "$(bar 1 10)"
 sc_metrics_load web2 "$TMP/res.full"
-eq "ascii: --check rows" "  Network   eth0       rx   0.52 MB/s  #.........
-                       tx   0.01 MB/s  #........." "$(sc_print_summary web2 | grep -A1 'Network   eth0')"
+eq "ascii: --check row" "  Network   eth0       #......... #.........  rx   0.52  tx   0.01 MB/s" "$(sc_print_summary web2 | grep 'Network   eth0')"
 SC_SET[ascii]=0 SC_G_FULL='█' SC_G_EMPTY='░' SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
 eq "colors: rx green, tx muted red" $'\e[32m|\e[38;5;131m' "$(TERM=xterm-256color; unset NO_COLOR; sc_ui_colors; printf '%s|%s' "$C_RX" "$C_TX")"
 eq "colors: 8-color tx falls back to palette red" $'\e[31m' "$(TERM=xterm; unset NO_COLOR; sc_ui_colors; printf '%s' "$C_TX")"
@@ -450,6 +461,158 @@ eq "rates over 1 s" $'netif=eth0|523000|12000\nnetif=wlan0|0|0' \
 eq "rates over 2 s, counter reset clamps to 0" $'netif=eth0|500|0' \
     "$(collector print_netifs 'eth0 1000 900' 'eth0 2000 100' 2)"
 eq "no interfaces gives a note" "net_note=no physical network interface found" "$(collector print_netifs '' '' 1)"
+
+section "FreeBSD / OPNsense collector (simulated: fake uname, sysctl, netstat, swapinfo, zfs, df, ps)"
+# Whole collector run with FreeBSD commands replaced by shell functions that
+# print recorded-style output. "sleep" switches the fakes to the second sample.
+F=$TMP/fbsd
+mkdir -p "$F"
+cat >"$F/netstat.1" <<'EOF'
+Name      Mtu Network            Address                   Ipkts Ierrs Idrop     Ibytes    Opkts Oerrs     Obytes  Coll
+vtnet0   1500 <Link#1>           52:54:00:aa:bb:01        100000     0     0   50000000    80000     0   20000000     0
+vtnet0      - 192.168.1.0/24     192.168.1.1                5000     -     -     400000     4000     -     300000     -
+em0      1500 <Link#2>           00:1b:21:aa:bb:02            10     0     0       1000       10     0       1000     0
+lo0     16384 <Link#3>           lo0                         320     0     0      25600      320     0      25600     0
+lo0         - ::1/128            ::1                           0     -     -          0        0     -          0     -
+pflog0  33152 <Link#4>                                         0     0     0          0     1234     0     456789     0
+pfsync0  1500 <Link#5>                                         0     0     0          0        0     0          0     0
+enc0     1536 <Link#6>                                         0     0     0          0        0     0          0     0
+bridge0  1500 <Link#7>           58:9c:fc:10:ff:01          7777     0     0     777777     7777     0     777777     0
+wg0      1420 <Link#8>                                         5     0     0        500        5     0        500     0
+vlan01   1500 <Link#9>           52:54:00:aa:bb:01           100     0     0      10000      100     0      10000     0
+ovpns1   1500 <Link#10>                                        1     0     0        100        1     0        100     0
+igb0.10  1500 <Link#11>          00:1b:21:aa:bb:03           100     0     0      10000      100     0      10000     0
+EOF
+sed -e 's/   50000000 /   62500000 /' -e 's/   20000000 /   20250000 /' -e 's/      1000       10     0       1000 /      3000       10     0       1500 /' \
+    -e 's/     777777     7777     0     777777 /    9777777     7777     0    9777777 /' "$F/netstat.1" >"$F/netstat.2"
+printf '1000 0 500 100 8400\n' >"$F/cp_time.1"
+printf '1200 0 600 100 8500\n' >"$F/cp_time.2"
+cat >"$F/swapinfo" <<'EOF'
+Device          1K-blocks     Used    Avail Capacity
+/dev/gpt/swapfs   2097152    10240  2086912     0%
+EOF
+printf 'zroot\t5368709120\t96636764160\n' >"$F/zfs"
+cat >"$F/df" <<'EOF'
+Filesystem         1024-blocks    Used    Avail Capacity  Mounted on
+zroot/ROOT/default    96500000 2128160 94371840     3%    /
+devfs                        1       1        0   100%    /dev
+zroot/var/log         94400000   28160 94371840     1%    /var/log
+zroot/tmp             94372000     160 94371840     1%    /tmp
+zroot                 94371936      96 94371840     1%    /zroot
+devfs                        1       1        0   100%    /var/dhcpd/dev
+devfs                        1       1        0   100%    /var/unbound/dev
+fdescfs                      1       1        0   100%    /dev/fd
+procfs                       8       8        0   100%    /proc
+/dev/gpt/efiboot0       266176    1872   264304     1%    /boot/efi
+tmpfs                  2097152    1200  2095952     1%    /var/run
+/usr/local/lib/python3.13 96500000 2128160 94371840  3%    /var/unbound/usr/local/lib/python3.13
+/lib                  96500000 2128160 94371840     3%    /var/unbound/lib
+EOF
+cat >"$F/ps" <<'EOF'
+    0 root      0.0  0.0     0 kernel
+   11 root    398.5  0.0    64 idle
+    1 root      0.0  0.0  1200 init
+  123 www       3.2  0.4 30000 php-cgi
+  456 unbound   1.0  0.5 40000 unbound
+EOF
+cat >"$F/fake.sh" <<'EOF'
+echo 1 >"$F/phase"
+uname() { case $1 in -s) echo FreeBSD ;; -r) echo 15.1-RELEASE-p4 ;; -sr) echo FreeBSD 15.1-RELEASE-p4 ;; *) echo FreeBSD ;; esac; }
+hostname() { echo opnsense.test; }
+date() { echo 1760090000; }
+sleep() { echo 2 >"$F/phase"; }
+sysctl() {
+    case $2 in
+    kern.cp_time) cat "$F/cp_time.$(cat "$F/phase")" ;;
+    kern.boottime) echo '{ sec = 1760000000, usec = 123456 } Thu Oct  9 08:53:20 2025' ;;
+    vm.loadavg) echo '{ 0.12 0.20 0.25 }' ;;
+    hw.ncpu) echo 4 ;;
+    hw.pagesize) echo 4096 ;;
+    hw.physmem) echo 8589934592 ;;
+    vm.stats.vm.v_free_count) echo 1048576 ;;
+    vm.stats.vm.v_inactive_count) echo 262144 ;;
+    dev.vtnet.0.%driver) echo vtnet ;;
+    dev.em.0.%driver) echo em ;;
+    dev.igb.0.%driver) echo igb ;;
+    *) echo "sysctl: unknown oid '$2'" >&2; return 1 ;;
+    esac
+}
+netstat() { cat "$F/netstat.$(cat "$F/phase")"; }
+swapinfo() { cat "$F/swapinfo"; }
+zfs() { cat "$F/zfs"; }
+df() { cat "$F/df"; }
+ps() { case "$*" in *user=*) cat "$F/ps" ;; *) awk '{ print $1 }' "$F/ps" ;; esac; }
+EOF
+fbsd_run() { # shell
+    "$1" -c 'F=$1; . "$F/fake.sh"; . "$2"' sh "$F" "$SC_ROOT/lib/remote/metrics.sh"
+}
+for shell in sh dash; do
+    command -v "$shell" >/dev/null || continue
+    fbsd_run "$shell" >"$F/out.$shell" 2>"$F/err.$shell"
+    eq "$shell: exit status" 0 "$?"
+    eq "$shell: no stderr output" "" "$(cat "$F/err.$shell")"
+done
+out=$(cat "$F/out.sh")
+eq "same output from dash" "$out" "$(cat "$F/out.dash" 2>/dev/null || cat "$F/out.sh")"
+eq "system lines" $'os=FreeBSD\nhostname=opnsense.test\nkernel=15.1-RELEASE-p4\ndistro=FreeBSD 15.1-RELEASE-p4\nuptime=90000\nload=0.12 0.20 0.25\ncores=4' \
+    "$(sed -n 1,7p <<<"$out")"
+eq "cpu from kern.cp_time over 1 s" $'cpu_busy=75.0\ncpu_user=50.0\ncpu_sys=25.0' "$(grep '^cpu_' <<<"$out")"
+eq "network: only NICs with a dev.<driver>.<unit> node" $'netif=vtnet0|12500000|250000\nnetif=em0|2000|500' "$(grep '^netif=' <<<"$out")"
+eq "no net_note when NICs are found" "" "$(grep '^net_note=' <<<"$out")"
+eq "memory: free + inactive pages are available" $'mem_total=8388608\nmem_used=3145728' "$(grep '^mem_' <<<"$out")"
+eq "swap from swapinfo -k" $'swap_total=2097152\nswap_used=10240' "$(grep '^swap_' <<<"$out")"
+eq "disks: one line per ZFS pool, devfs/fdescfs/procfs/tmpfs and nullfs of the root dataset skipped" \
+    $'disk=zroot (zfs)|99614720|5242880|6\ndisk=/boot/efi|266176|1872|1' "$(grep '^disk=' <<<"$out")"
+eq "process count includes all processes" "proc_count=5" "$(grep '^proc_count=' <<<"$out")"
+eq "idle process left out, busiest first" $'proc=123|www|3.2|0.4|30000|php-cgi\nproc=456|unbound|1.0|0.5|40000|unbound' \
+    "$(grep '^proc=' <<<"$out" | head -n 2)"
+eq "idle process not listed" "" "$(grep '|idle$' <<<"$out")"
+
+fb() { # function args... (collector functions with the FreeBSD fakes)
+    SERVERCAT_METRICS_LIB=1 sh -c 'F=$1; shift; . "$F/fake.sh"; . "$1"; shift; "$@"' sh "$F" "$SC_ROOT/lib/remote/metrics.sh" "$@"
+}
+eq "physical interfaces" "vtnet0 em0 wlan0 " "$(fb bsd_phys_ifaces "vtnet0 em0 lo0 pflog0 pfsync0 enc0 bridge0 wg0 vlan01 ovpns1 ovpnc2 lagg0 tun0 tap1 gif0 gre0 vxlan0 epair0a igb0.10 igb1 wlan0")"
+eq "link counters from the header columns" $'vtnet0 50000000 20000000\nem0 1000 1000\nlo0 25600 25600\npflog0 0 456789' \
+    "$(fb netstat_link_counters <"$F/netstat.1" | head -n 4)"
+eq "cp_time with 6 fields (OpenBSD) is ignored" "" "$(fb bsd_cpu_print '1 2 3 4 5 6' '2 3 4 5 6 7')"
+printf 'Device          1K-blocks     Used    Avail Capacity\n/dev/ada0p3       1048576     1024  1047552     0%%\n/dev/ada1p3       1048576     2048  1046528     0%%\nTotal             2097152     3072  2094080     0%%\n' >"$F/swapinfo"
+eq "swap: two devices summed, Total row ignored" $'swap_total=2097152\nswap_used=3072' "$(fb bsd_swap)"
+printf 'Device          1K-blocks     Used    Avail Capacity\n' >"$F/swapinfo"
+eq "swap: no device means no swap" $'swap_total=0\nswap_used=0' "$(fb bsd_swap)"
+eq "UFS root without ZFS pools" "disk=/|20000000|3000000|17" \
+    "$(printf 'Filesystem 1024-blocks Used Avail Capacity Mounted on\n/dev/gpt/rootfs 20000000 3000000 15400000 17%% /\ndevfs 1 1 0 100%% /dev\n' | fb print_disks '')"
+eq "Linux df unchanged without pools" "disk=/srv/nfs|100|50|50" \
+    "$(printf 'Filesystem 1024-blocks Used Avail Capacity Mounted on\nnas:/export 100 50 50 50%% /srv/nfs\n' | fb print_disks '')"
+eq "same source mounted twice: only the first mount" $'disk=/var/unbound/usr/local/lib|94371840|1000|1\ndisk=/boot/efi|266176|1872|1' \
+    "$(printf 'Filesystem 1024-blocks Used Avail Capacity Mounted on\n/usr/local/lib 94371840 1000 94370840 1%% /var/unbound/usr/local/lib\n/usr/local/lib 94371840 1000 94370840 1%% /var/unbound/usr/local/lib/python3.13\n/dev/gpt/efiboot0 266176 1872 264304 1%% /boot/efi\n' | fb print_disks '')"
+df_head='Filesystem 1024-blocks Used Avail Capacity Mounted on'
+eq "OPNsense nullfs (real df lines): first mount stays, same numbers dropped" "disk=/var/unbound/usr/local/lib/python3.13|457982620|4906812|1" \
+    "$(printf '%s\n' "$df_head" \
+        'devfs                               1       0         1     0%    /var/unbound/dev' \
+        '/usr/local/lib/python3.13   457982620 4906812 453075808     1%    /var/unbound/usr/local/lib/python3.13' \
+        '/lib                        457982620 4906812 453075808     1%    /var/unbound/lib' | fb print_disks '')"
+eq "different numbers with a path source stay" 2 \
+    "$(printf '%s\n' "$df_head" '/data/a 1000 10 990 1% /mnt/a' '/data/b 1000 20 980 2% /mnt/b' | fb print_disks '' | grep -c '^disk=')"
+eq "Linux bind mount (same device, same numbers): first mount only" "disk=/|41000000|21000000|52" \
+    "$(printf '%s\n' "$df_head" '/dev/sda1 41000000 21000000 18000000 52% /' '/dev/sda1 41000000 21000000 18000000 52% /srv/www' | fb print_disks '')"
+eq "two devices with equal numbers (empty disks of one size) both stay" $'disk=/mnt/d1|960000000|28|1\ndisk=/mnt/d2|960000000|28|1' \
+    "$(printf '%s\n' "$df_head" '/dev/sdb1 960000000 28 959999972 1% /mnt/d1' '/dev/sdc1 960000000 28 959999972 1% /mnt/d2' | fb print_disks '')"
+eq "known limit: two shares of one NAS filesystem with equal numbers are merged" 1 \
+    "$(printf '%s\n' "$df_head" 'nas:/export/a 5000 100 4900 2% /mnt/a' 'nas:/export/b 5000 100 4900 2% /mnt/b' | fb print_disks '' | grep -c '^disk=')"
+eq "sources with spaces are compared in full" 2 \
+    "$(printf 'Filesystem 1024-blocks Used Avail Capacity Mounted on\n//u@nas/My Share 100 50 50 50%% /mnt/a\n//u@nas/My Docs 200 60 140 30%% /mnt/b\n' | fb print_disks '' | grep -c '^disk=')"
+eq "idle is only skipped on FreeBSD" "proc=11|root|98.0|0.0|64|idle" "$(echo '11 root 98.0 0.0 64 idle' | fb print_procs Linux)"
+
+{ printf 'rc=0\nts=1760090000\n'; cat "$F/out.sh"; } >"$F/res"
+sc_metrics_load opn "$F/res"
+SC_SRV[opn|host]=opnsense.test
+summary=$(sc_print_summary opn)
+eq "--check: CPU" "  CPU       75.0%" "$(grep '^  CPU' <<<"$summary")"
+eq "--check: ZFS pool as one disk" "  Disk      5.0G / 95.0G (6%) zroot (zfs)" "$(grep -m1 '^  Disk' <<<"$summary")"
+eq "--check: vtnet0 rx 12.50, tx 0.25 MB/s" 1 "$(grep -c '^  Network   vtnet0 .*  rx  12.50  tx   0.25 MB/s$' <<<"$summary")"
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail opn)
+eq "detail: order on FreeBSD" ordered "$(order_of <<<"$detail")"
+eq "detail: two interfaces, one row each" 2 "$(net_rows <<<"$detail" | grep -c .)"
 
 # ------------------------------------------------------------------------------
 if [[ ${SC_TEST_NETWORK:-1} == 1 ]]; then

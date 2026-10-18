@@ -190,27 +190,27 @@ sc_view_detail() {
     done
 }
 
-# One "label [bar] pct  detail" row of the detail view.
-# One direction of an interface as "rx   0.52 MB/s  ▍░░░": $1 rx|tx, $2 rate
-# in bytes/s, $3 bar width. rx is green, tx muted red. Width: 16 + $3.
-sc_netif_cell() {
-    local c=$C_RX
-    [[ $1 == tx ]] && c=$C_TX
+# Split rate bar of one interface, $3 cells wide: rx (green) in the left
+# half, a gap, tx (muted red) in the right half; each half has its own
+# 100 MB/s scale.
+sc_netif_bar() {
+    local w=$(($3 - 1)) h rx
+    h=$((w / 2))
+    sc_rate_bar "$1" "$h"
+    rx="$C_RX$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
+    sc_rate_bar "$2" $((w - h))
+    REPLY="$rx $C_TX$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
+}
+
+# "rx  12.50  tx   0.25 MB/s" (25 characters up to 999.99 MB/s).
+sc_netif_values() {
+    local rx
+    sc_fmt_mbs "$1"; rx=${REPLY% MB/s}
     sc_fmt_mbs "$2"
-    printf -v SC_NETIF_CELL '%s %11s  ' "$1" "$REPLY"
-    sc_rate_bar "$2" "$3"
-    REPLY="$SC_NETIF_CELL$c$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
+    printf -v REPLY 'rx %6s  tx %6s MB/s' "$rx" "${REPLY% MB/s}"
 }
 
-# Bar width for the network rows: what is left of the screen after the
-# name and rate columns, at most as wide as the other bars.
-sc_netif_bar_width() {
-    local w=$((SC_COLS - 2 - SC_DET_LW - 16))
-    ((w > SC_DET_BW)) && w=$SC_DET_BW
-    ((w < 4)) && w=4
-    REPLY=$w
-}
-
+# One "label [bar] pct  detail" row of the detail view.
 sc_detail_bar_line() {
     local label=$1 pct=$2 text=$3 bar pt
     if [[ -n $pct ]]; then
@@ -231,7 +231,7 @@ sc_detail_bar_line() {
 
 sc_draw_detail() {
     local name=$1 rc=${SC_M[$1|rc]-} status line v used total pct mnt size room n=0 row
-    local iface rxv txv blank
+    local iface rxv txv
     if [[ -z $rc ]]; then
         status="connecting$SC_G_ELL"
     elif ((rc == 0)); then
@@ -304,16 +304,15 @@ sc_draw_detail() {
         sc_frame_text "$C_BOLD" "  Network"
         if [[ -n ${SC_M[$name|netifs]-} ]]; then
             n=0
-            sc_netif_bar_width; v=$REPLY
-            sc_repeat ' ' "$SC_DET_LW"; blank=$REPLY
-            # Two rows per interface: rx with the name, tx below it.
+            # Same columns as the Disks rows: name, bar, then the values
+            # where the disks show percentage and size.
             while IFS='|' read -r iface rxv txv; do
                 ((n++ < 6)) || break
                 sc_fit "$iface" "$SC_DET_LW"; line="  $C_BOLD$REPLY$C_NORM"
-                sc_netif_cell rx "$rxv" "$v"
-                SC_FRAME+=("$line$REPLY$C_RESET")
-                sc_netif_cell tx "$txv" "$v"
-                SC_FRAME+=("  $blank$REPLY$C_RESET")
+                sc_netif_bar "$rxv" "$txv" "$SC_DET_BW"; line+=$REPLY
+                sc_netif_values "$rxv" "$txv"
+                sc_fit "$REPLY" $((SC_COLS - 2 - SC_DET_LW - SC_DET_BW - 1))
+                SC_FRAME+=("$line $C_DIM$REPLY$C_RESET")
             done <<<"${SC_M[$name|netifs]}"
         else
             sc_frame_text "$C_DIM" "  ${SC_M[$name|net_note]:-no network data}"

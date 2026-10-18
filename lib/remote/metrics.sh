@@ -1,7 +1,7 @@
 # ServerCat metrics collector. Sent to the remote host and run with `sh -s`,
 # so it must stay POSIX sh and must not depend on the remote login shell.
 # Prints key=value lines; netif=, disk= and proc= lines repeat. Linux is
-# fully supported, macOS and FreeBSD on a best-effort basis.
+# and FreeBSD (OPNsense) are fully supported, macOS on a best-effort basis.
 #
 # Rates (CPU, network) come from two samples taken 1 second apart.
 # Network rates are per physical interface: netif=name|rx_bytes_per_s|tx_bytes_per_s.
@@ -62,11 +62,141 @@ print_netifs() {
         END { if (!n) print "net_note=no physical network interface found" }'
 }
 
+# "name rx_bytes tx_bytes" from `netstat -ibn` output on stdin (macOS,
+# FreeBSD), one line per interface from its <Link#n> row. The byte columns
+# are located by their header and counted from the end of the line, because
+# the Address column is empty for interfaces without a MAC address.
+netstat_link_counters() {
+    awk '$1 == "Name" {
+            for (i = 1; i <= NF; i++) { if ($i == "Ibytes") ri = NF - i; if ($i == "Obytes") ro = NF - i }
+            next
+        }
+        ri && $3 ~ /^<Link/ && !seen[$1]++ { print $1, $(NF - ri), $(NF - ro) }'
+}
+
+# Keeps the "name rx tx" lines of $2 whose name is in the space separated list $1.
+pick_ifaces() {
+    printf '%s\n' "$2" | awk -v want=" $1 " 'NF == 3 && index(want, " " $1 " ")'
+}
+
 # Physical interfaces on macOS are en0, en1, ...: "name rx_bytes tx_bytes".
 darwin_net_sample() {
-    netstat -ibn 2>/dev/null | awk '$3 ~ /^<Link/ && $1 ~ /^en[0-9]+$/ && !seen[$1]++ {
-        if (NF >= 11) print $1, $7, $10; else print $1, $6, $9
+    netstat -ibn 2>/dev/null | netstat_link_counters | awk '$1 ~ /^en[0-9]+$/'
+}
+
+# kern.cp_time holds "user nice sys intr idle" ticks, summed over all CPUs.
+bsd_cpu_sample() {
+    sysctl -n kern.cp_time 2>/dev/null
+}
+
+bsd_cpu_print() {
+    echo "$1 $2" | awk 'NF == 10 {
+        t = 0; for (i = 1; i <= 5; i++) { d[i] = $(i + 5) - $i; t += d[i] }
+        if (t <= 0) t = 1
+        printf "cpu_busy=%.1f\ncpu_user=%.1f\ncpu_sys=%.1f\n",
+            100 * (t - d[5]) / t, 100 * (d[1] + d[2]) / t, 100 * (d[3] + d[4]) / t
     }'
+}
+
+# Cloned FreeBSD interfaces (pf logging, IPsec, VLAN, lagg, OpenVPN, netgraph).
+BSD_VIRTUAL_IF='^(pflog|pfsync|enc|lagg|epair|vlan|ovpn[cs]|ipsec|ng|pppoe|faith|ipfw|carp)[0-9]'
+
+# Physical interfaces among the names in $1, space separated. A NIC driver
+# instance (vtnet0, em0, igb0, ix0, re0, ue0) has a dev.<driver>.<unit> node
+# in sysctl; cloned interfaces (lo, bridge, vlan, wg, tun, ...) have none.
+# wlanN is a clone on top of the radio, but it carries the wireless traffic.
+bsd_phys_ifaces() {
+    for i in $1; do
+        echo "$i" | grep -Eq "$VIRTUAL_IF|$BSD_VIRTUAL_IF" && continue
+        case $i in
+        wlan[0-9]*) ;;
+        *[!A-Za-z0-9]*) continue ;;
+        *)
+            drv=$(echo "$i" | sed 's/[0-9]*$//')
+            unit=${i#"$drv"}
+            [ -n "$unit" ] && [ "$(sysctl -n "dev.$drv.$unit.%driver" 2>/dev/null)" = "$drv" ] || continue
+            ;;
+        esac
+        printf '%s ' "$i"
+    done
+}
+
+# Memory in KiB from the FreeBSD page counters; free and inactive pages count
+# as available (ZFS ARC is wired memory and counts as used).
+bsd_mem() {
+    ps_bytes=$(sysctl -n hw.pagesize 2>/dev/null)
+    total=$(sysctl -n hw.physmem 2>/dev/null)
+    free=$(sysctl -n vm.stats.vm.v_free_count 2>/dev/null)
+    inactive=$(sysctl -n vm.stats.vm.v_inactive_count 2>/dev/null)
+    if [ -n "$total" ] && [ -n "$free" ] && [ -n "$ps_bytes" ]; then
+        echo "mem_total=$((total / 1024))"
+        echo "mem_used=$(((total - (free + ${inactive:-0}) * ps_bytes) / 1024))"
+    fi
+}
+
+# swapinfo -k: "Device 1K-blocks Used Avail Capacity", plus a Total row when
+# there are several swap devices. No device rows means no swap.
+bsd_swap() {
+    out=$(swapinfo -k 2>/dev/null) || return 0
+    printf '%s\n' "$out" | awk 'NR > 1 && $1 != "Total" { t += $2; u += $3 }
+        END { printf "swap_total=%d\nswap_used=%d\n", t, u }'
+}
+
+# ZFS pools as "name used_bytes avail_bytes" (top-level dataset: used includes
+# children and snapshots, used + avail is the usable size).
+bsd_zfs_pools() {
+    zfs list -Hp -d 0 -o name,used,avail 2>/dev/null
+}
+
+# disk= lines from `df -P -k` on stdin. Pseudo filesystems are skipped. ZFS
+# datasets of the pools in $1 ("name used avail" lines, bytes) all share the
+# pool's free space, so each pool is shown once as "<pool> (zfs)" instead.
+#
+# Repeated mounts of an already listed filesystem are left out, the first
+# mount stays:
+# - same source (Linux bind mounts, a share mounted twice);
+# - same size, used and avail as an earlier row, for sources that are not
+#   devices (/dev/...). That catches FreeBSD nullfs mounts, whose source is a
+#   directory (/lib mounted at /var/unbound/lib), including nullfs mounts of a
+#   ZFS dataset that is shown as its pool. Two different block devices are
+#   never merged, even with equal numbers (e.g. two empty disks of one size).
+print_disks() {
+    awk -v zfs="$1" 'BEGIN {
+        n = split(zfs, L, "\n")
+        for (i = 1; i <= n; i++) {
+            if (split(L[i], f, /[ \t]+/) != 3 || f[2] !~ /^[0-9]+$/ || f[3] !~ /^[0-9]+$/) continue
+            pool[f[1]] = 1; size = int((f[2] + f[3]) / 1024); used = int(f[2] / 1024)
+            if (size > 0) printf "disk=%s (zfs)|%d|%d|%d\n", f[1], size, used, int((used * 100 + size - 1) / size)
+        }
+    }
+    NR > 1 {
+        p = 0; for (i = 2; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = i; break }
+        if (p < 5 || $(p - 3) == 0) next
+        mnt = $(p + 1); for (i = p + 2; i <= NF; i++) mnt = mnt " " $i
+        nums = $(p - 3) " " $(p - 2) " " $(p - 1)
+        ds = $1; sub(/\/.*/, "", ds); if (ds in pool) { sizes[nums] = 1; next }
+        if ($1 ~ /^(tmpfs|devtmpfs|udev|overlay|shm|none|squashfs|devfs|fdescfs|procfs|map|proc|sysfs|efivarfs)$/) next
+        if (mnt ~ /^\/(dev|proc|sys|run)(\/|$)/ || mnt ~ /^\/snap\// || mnt ~ /^\/private\/var\/(vm|folders)\//) next
+        if (mnt ~ /^\/Volumes\/\.timemachine\//) next
+        if (mnt ~ /^\/System\/Volumes\/(VM|Preboot|Update|xarts|iSCPreboot|Hardware)/) next
+        src = $1; for (i = 2; i < p - 3; i++) src = src " " $i
+        if (src in seen) next
+        if (src !~ /^\/dev\// && nums in sizes) next
+        seen[src] = 1; sizes[nums] = 1
+        v = $p; sub(/%/, "", v)
+        printf "disk=%s|%s|%s|%s\n", mnt, $(p - 3), $(p - 2), v
+    }' | head -n 20
+}
+
+# proc= lines from `ps -o pid,user,pcpu,pmem,rss,comm` on stdin, busiest first.
+# FreeBSD's "idle" kernel process accounts idle time as CPU (up to 100% per
+# core), so it is left out there.
+print_procs() {
+    awk -v os="$1" '{
+        if (os == "FreeBSD" && $2 == "root" && $6 == "idle" && NF == 6) next
+        c = $6; for (i = 7; i <= NF; i++) c = c " " $i
+        printf "proc=%s|%s|%s|%s|%s|%s\n", $1, $2, $3, $4, $5, c
+    }' | sort -t'|' -k3,3 -rn | head -n 100
 }
 
 # Only collect when run as the script, not when sourced by the tests.
@@ -142,17 +272,26 @@ Darwin)
         printf "swap_total=%d\nswap_used=%d\n", t, u
     }'
     ;;
+FreeBSD)
+    echo "distro=$(uname -sr)"
+    bsd_common
+    # -W: do not truncate long interface names.
+    phys=$(bsd_phys_ifaces "$(netstat -ibnW 2>/dev/null | netstat_link_counters | awk '{ print $1 }')")
+    c1=$(bsd_cpu_sample)
+    n1=$(netstat -ibnW 2>/dev/null | netstat_link_counters)
+    sleep 1
+    c2=$(bsd_cpu_sample)
+    n2=$(netstat -ibnW 2>/dev/null | netstat_link_counters)
+    bsd_cpu_print "$c1" "$c2"
+    print_netifs "$(pick_ifaces "$phys" "$n1")" "$(pick_ifaces "$phys" "$n2")" 1
+    bsd_mem
+    bsd_swap
+    zfs_pools=$(bsd_zfs_pools)
+    ;;
 *BSD | DragonFly)
     echo "distro=$(uname -sr)"
     bsd_common
-    ps_bytes=$(sysctl -n hw.pagesize 2>/dev/null)
-    total=$(sysctl -n hw.physmem 2>/dev/null)
-    free=$(sysctl -n vm.stats.vm.v_free_count 2>/dev/null)
-    inactive=$(sysctl -n vm.stats.vm.v_inactive_count 2>/dev/null)
-    if [ -n "$total" ] && [ -n "$free" ]; then
-        echo "mem_total=$((total / 1024))"
-        echo "mem_used=$(((total - (free + ${inactive:-0}) * ps_bytes) / 1024))"
-    fi
+    bsd_mem
     echo "net_note=per-interface rates are not collected on $os"
     ;;
 *)
@@ -160,23 +299,10 @@ Darwin)
     ;;
 esac
 
-# Locates the "NN%" column so filesystem names with spaces still parse.
-df -P -k 2>/dev/null | awk 'NR > 1 {
-    p = 0; for (i = 2; i <= NF; i++) if ($i ~ /^[0-9]+%$/) { p = i; break }
-    if (p < 5 || $(p - 3) == 0) next
-    mnt = $(p + 1); for (i = p + 2; i <= NF; i++) mnt = mnt " " $i
-    if ($1 ~ /^(tmpfs|devtmpfs|udev|overlay|shm|none|squashfs|devfs|map|proc|sysfs|efivarfs)$/) next
-    if (mnt ~ /^\/(dev|proc|sys|run)(\/|$)/ || mnt ~ /^\/snap\// || mnt ~ /^\/private\/var\/(vm|folders)\//) next
-    if (mnt ~ /^\/Volumes\/\.timemachine\//) next
-    if (mnt ~ /^\/System\/Volumes\/(VM|Preboot|Update|xarts|iSCPreboot|Hardware)/) next
-    v = $p; sub(/%/, "", v)
-    printf "disk=%s|%s|%s|%s\n", mnt, $(p - 3), $(p - 2), v
-}' | head -n 20
+# The disk filter locates the "NN%" column so names with spaces still parse.
+df -P -k 2>/dev/null | print_disks "${zfs_pools-}"
 
 echo "proc_count=$(ps -A -o pid= 2>/dev/null | wc -l | tr -d ' ')"
-ps -A -o pid= -o user= -o pcpu= -o pmem= -o rss= -o comm= 2>/dev/null | awk '{
-    c = $6; for (i = 7; i <= NF; i++) c = c " " $i
-    printf "proc=%s|%s|%s|%s|%s|%s\n", $1, $2, $3, $4, $5, c
-}' | sort -t'|' -k3,3 -rn | head -n 100
+ps -A -o pid= -o user= -o pcpu= -o pmem= -o rss= -o comm= 2>/dev/null | print_procs "$os"
 
 exit 0

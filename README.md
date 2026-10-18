@@ -33,8 +33,9 @@ If any of these is missing, startup prints a `brew install …` hint. `jq` is
 not needed.
 
 Remote hosts need a POSIX `sh` plus `awk`, `ps` and `df`. Linux gets full
-metrics. macOS and FreeBSD hosts work on a best-effort basis (FreeBSD has no
-CPU or network rates; the status page says so instead of showing numbers).
+and FreeBSD (including OPNsense) get full metrics; FreeBSD has no iowait
+figure. macOS hosts work on a best-effort basis. Other BSDs show no CPU or
+network rates; the status page says so instead of showing numbers.
 
 ## Usage
 
@@ -139,26 +140,40 @@ literally.
 The server detail view and `--check` show the same sections in this order:
 
 1. **CPU**, followed by memory, swap and load
-2. **Disks**: usage per mounted filesystem
-3. **Network**: two rows per physical interface, the current receive rate
-   (rx) and below it the transmit rate (tx), each with a bar
+2. **Disks**: usage per mounted filesystem; on FreeBSD each ZFS pool is one
+   line (`zroot (zfs)`, used and usable size of the pool, snapshots included),
+   because all datasets of a pool share its free space. Repeated mounts of
+   a listed filesystem are shown at their first mount only: the same source
+   again (Linux bind mounts), or, for sources that are not `/dev/…` devices,
+   the same size, used and available space as an earlier row (FreeBSD nullfs
+   mounts such as `/lib` on `/var/unbound/lib`). Known limit: two different
+   non-device filesystems with exactly the same three numbers (for example
+   two NFS/SMB shares backed by one NAS volume) appear as one line. Two
+   block devices are never merged
+3. **Network**: one row per physical interface with a split bar (receive
+   rate rx left, transmit rate tx right) and both rates
 4. **Processes**: PID, user, CPU %, memory %, RSS, command
 
 Network rates are megabytes per second (1 MB = 1,000,000 bytes, two
 decimals), averaged over the same 1-second sampling window that is used for
 the CPU rates.
 
-Each interface takes two rows: rx with the interface name, tx below it
-with the name column left blank.
+The Network rows use the columns of the Disks rows: name, bar, and the
+values where the disks show percentage and size. The bar column is split:
+rx (left half), a one-cell gap, tx (right half). The unit appears once at
+the end. At 60 columns a row is exactly 60 characters wide:
 
 ```
+  Disks
+  /           ██████████░░░░░░░░░░   52%  20.0G / 39.1G
+
   Network
-  eth0        rx  52.40 MB/s  ████████████▋░░░░░░░░░░░
-              tx   0.01 MB/s  ▏░░░░░░░░░░░░░░░░░░░░░░░
+  eth0        ████▊░░░░ ▏░░░░░░░░░ rx  52.40  tx   0.01 MB/s
+  wlan0       ░░░░░░░░░ ░░░░░░░░░░ rx   0.00  tx   0.00 MB/s
 ```
 
-- **Fixed scale:** 100 MB/s fills a bar; faster rates (for example on
-  10 Gbit links) are shown as a full bar. The scale does not adapt, so bars
+- **Fixed scale:** each half has its own scale; 100 MB/s fills it. Faster rates (for example on
+  10 Gbit links) are shown as a full half. The scale does not adapt, so bars
   of different servers and refreshes are directly comparable.
 - **Resolution:** eighth-cell steps with `▏▎▍▌▋▊▉█`. Any traffic above zero
   shows at least `▏`, even when the rate rounds to `0.00 MB/s`.
@@ -167,15 +182,16 @@ with the name column left blank.
   contrast of at least 3:1 on common light and dark backgrounds (white,
   Solarized Light, black, #1e1e1e, One Dark). The empty part of a bar is
   dimmed. `NO_COLOR` turns colors off.
-- **Width:** the bars fill the space after the name and rate columns, at
-  most as wide as the CPU/memory bars and at least 4 cells (20 cells at 60
-  columns, 36 at 110). `--check` uses the same rx-above-tx rows with 10-cell
-  bars and no colors.
-- **Height:** the Network section needs 1 heading row plus 2 rows per
-  interface (5 rows for two interfaces) and a blank separator. The detail
+- **Width:** the bar column is as wide as the Disks and CPU bars (20 cells at
+  60 columns: 9 rx + gap + 10 tx; 36 at 110: 17 + gap + 18). With an even
+  width the tx half is one cell longer. `--check` prints one line per
+  interface with a 10 + gap + 10 bar and no colors:
+  `Network   eth0       ▏░░░░░░░░░ ▏░░░░░░░░░  rx   0.52  tx   0.01 MB/s`.
+- **Height:** the Network section needs 1 heading row plus 1 row per
+  interface (3 rows for two interfaces) and a blank separator. The detail
   view does not scroll, so on short terminals the sections at the bottom are
   cut off: with two disks and two interfaces the Network section is fully
-  visible from a terminal height of 20 rows.
+  visible from a terminal height of 18 rows.
 - **ASCII:** with `ascii = 1` (or a non-UTF-8 locale) bars use `#` and `.`
   like the other bars, in whole cells.
 
@@ -190,8 +206,15 @@ veth or other virtual interfaces:
   `ib*`) are used instead.
 - **macOS:** the `en0`, `en1`, … interfaces from `netstat -ibn`. Idle ports
   (for example unused Thunderbolt ports) are listed with 0.00 MB/s.
-- **FreeBSD and other systems:** no per-interface rates; the Network section
-  shows a note instead.
+- **FreeBSD / OPNsense:** interfaces from `netstat -ibnW` that belong to a
+  NIC driver, i.e. have a `dev.<driver>.<unit>` sysctl node (`vtnet0`,
+  `em0`, `igb0`, `ix0`, `re0`, `ue0`), plus `wlan*`. Cloned interfaces (`lo0`,
+  `pflog0`, `pfsync0`, `enc0`, `bridge*`, `lagg*`, `vlan*`, `wg*`, `tun*`,
+  `tap*`, `gif*`, `gre*`, `vxlan*`, `epair*`, `ovpn*`, VLANs like `igb0.10`)
+  have none and are excluded. CPU comes from `kern.cp_time`, swap from
+  `swapinfo -k`; the `idle` kernel process is left out of the process list.
+- **Other systems:** no per-interface rates; the Network section shows a note
+  instead.
 
 Interfaces that are physical but down are still listed (with 0.00 MB/s).
 
@@ -245,7 +268,8 @@ tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
 - **Collection:** `lib/remote/metrics.sh` is sent to the host on stdin
   (`ssh … -- host 'sh -s' < metrics.sh`). Nothing is installed remotely, and
   the remote login shell doesn't matter. It samples `/proc/stat` and
-  `/proc/net/dev` one second apart for CPU and network rates and prints
+  `/proc/net/dev` (FreeBSD: `kern.cp_time` and `netstat -ibnW`) one second
+  apart for CPU and network rates and prints
   `key=value` lines (`netif=name|rx|tx` in bytes/s per physical interface).
 - **Robustness:** each run has `ConnectTimeout`, `ServerAliveInterval` and a
   hard kill timeout (macOS has no `timeout(1)`; `sc_run_timeout` implements

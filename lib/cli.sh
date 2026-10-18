@@ -28,7 +28,7 @@ sc_cli_list() {
 }
 
 sc_print_summary() {
-    local name=$1 d mnt size used total pct n=0 p iface rxv txv
+    local name=$1 d mnt size used total pct n=0 p iface rxv txv line
     sc_server_target "$name"
     if ! sc_metrics_online "$name"; then
         printf '%s (%s): OFFLINE - %s\n' "$name" "$REPLY" "${SC_M[$name|err]:-unknown error}"
@@ -53,10 +53,10 @@ sc_print_summary() {
     done <<<"${SC_M[$name|disks]}"
     if [[ -n ${SC_M[$name|netifs]-} ]]; then
         while IFS='|' read -r iface rxv txv; do
-            sc_netif_cell rx "$rxv" 10
-            printf '  %-9s %-10s %s\n' Network "$iface" "$REPLY"
-            sc_netif_cell tx "$txv" 10
-            printf '  %-9s %-10s %s\n' "" "" "$REPLY"
+            sc_netif_bar "$rxv" "$txv" 21
+            line=$REPLY
+            sc_netif_values "$rxv" "$txv"
+            printf '  %-9s %-10s %s  %s\n' Network "$iface" "$line" "$REPLY"
         done <<<"${SC_M[$name|netifs]}"
     else
         printf '  %-9s %s\n' Network "${SC_M[$name|net_note]:-no network data}"
