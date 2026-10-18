@@ -28,7 +28,7 @@ sc_cli_list() {
 }
 
 sc_print_summary() {
-    local name=$1 d mnt size used total pct n=0 p
+    local name=$1 d mnt size used total pct n=0 p iface rxv txv
     sc_server_target "$name"
     if ! sc_metrics_online "$name"; then
         printf '%s (%s): OFFLINE - %s\n' "$name" "$REPLY" "${SC_M[$name|err]:-unknown error}"
@@ -45,17 +45,22 @@ sc_print_summary() {
     sc_fmt_kib "${SC_M[$name|mem_total]-}"; total=$REPLY
     sc_pct "${SC_M[$name|mem_used]-}" "${SC_M[$name|mem_total]-}" && pct=$REPLY || pct=-
     printf '  %-9s %s / %s (%s%%)\n' Memory "$used" "$total" "$pct"
-    if [[ -n ${SC_M[$name|net_rx]-} ]]; then
-        sc_fmt_bytes "${SC_M[$name|net_rx]}"; d=$REPLY
-        sc_fmt_bytes "${SC_M[$name|net_tx]}"
-        printf '  %-9s rx %s/s, tx %s/s\n' Network "$d" "$REPLY"
-    fi
     while IFS='|' read -r mnt size used pct; do
         [[ -n $mnt ]] || continue
         sc_fmt_kib "$used"; d=$REPLY
         sc_fmt_kib "$size"
         printf '  %-9s %s / %s (%s%%) %s\n' Disk "$d" "$REPLY" "$pct" "$mnt"
     done <<<"${SC_M[$name|disks]}"
+    if [[ -n ${SC_M[$name|netifs]-} ]]; then
+        while IFS='|' read -r iface rxv txv; do
+            sc_netif_cell rx "$rxv" 10
+            printf '  %-9s %-10s %s\n' Network "$iface" "$REPLY"
+            sc_netif_cell tx "$txv" 10
+            printf '  %-9s %-10s %s\n' "" "" "$REPLY"
+        done <<<"${SC_M[$name|netifs]}"
+    else
+        printf '  %-9s %s\n' Network "${SC_M[$name|net_note]:-no network data}"
+    fi
     printf '  Top processes (%s total):\n' "${SC_M[$name|proc_count]:-?}"
     sc_proc_header
     printf '    %s\n' "$REPLY"

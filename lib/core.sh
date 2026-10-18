@@ -47,9 +47,12 @@ sc_glyphs_init() {
     if [[ ${SC_SET[ascii]:-0} == 1 || $charmap != UTF-8 ]]; then
         SC_G_FULL='#' SC_G_EMPTY='.' SC_G_DOT='*' SC_G_HOLLOW='o' SC_G_ELL='~'
         SC_G_SEP='|' SC_G_SEL='>' SC_G_UPDOWN='^v' SC_G_RX='rx' SC_G_TX='tx' SC_G_ENTER='Enter'
+        SC_G_EIGHTHS=()
     else
         SC_G_FULL='█' SC_G_EMPTY='░' SC_G_DOT='●' SC_G_HOLLOW='○' SC_G_ELL='…'
         SC_G_SEP='·' SC_G_SEL='▶' SC_G_UPDOWN='↑↓' SC_G_RX='↓' SC_G_TX='↑' SC_G_ENTER='⏎'
+        # Partial cells for 1/8 .. 7/8 of a cell, indexed by eighths.
+        SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
     fi
 }
 
@@ -152,6 +155,15 @@ sc_fmt_kib() {
     else
         REPLY="$((t / 10)).$((t % 10))${units[i]}"
     fi
+}
+
+# Bytes per second as megabytes per second (1 MB = 1,000,000 bytes), two
+# decimals, rounded: 523000 -> "0.52 MB/s".
+sc_fmt_mbs() {
+    local h
+    [[ $1 =~ ^[0-9]+$ ]] || { REPLY=-; return; }
+    h=$(((10#$1 + 5000) / 10000))
+    printf -v REPLY '%d.%02d MB/s' $((h / 100)) $((h % 100))
 }
 
 sc_fmt_bytes() {

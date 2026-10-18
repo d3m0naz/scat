@@ -34,7 +34,7 @@ not needed.
 
 Remote hosts need a POSIX `sh` plus `awk`, `ps` and `df`. Linux gets full
 metrics. macOS and FreeBSD hosts work on a best-effort basis (FreeBSD has no
-CPU or network rates).
+CPU or network rates; the status page says so instead of showing numbers).
 
 ## Usage
 
@@ -134,13 +134,74 @@ command = df -h
 Comments must be on their own lines (`#` or `;`). Text after `=` is taken
 literally.
 
+### Status page
+
+The server detail view and `--check` show the same sections in this order:
+
+1. **CPU**, followed by memory, swap and load
+2. **Disks**: usage per mounted filesystem
+3. **Network**: two rows per physical interface, the current receive rate
+   (rx) and below it the transmit rate (tx), each with a bar
+4. **Processes**: PID, user, CPU %, memory %, RSS, command
+
+Network rates are megabytes per second (1 MB = 1,000,000 bytes, two
+decimals), averaged over the same 1-second sampling window that is used for
+the CPU rates.
+
+Each interface takes two rows: rx with the interface name, tx below it
+with the name column left blank.
+
+```
+  Network
+  eth0        rx  52.40 MB/s  ████████████▋░░░░░░░░░░░
+              tx   0.01 MB/s  ▏░░░░░░░░░░░░░░░░░░░░░░░
+```
+
+- **Fixed scale:** 100 MB/s fills a bar; faster rates (for example on
+  10 Gbit links) are shown as a full bar. The scale does not adapt, so bars
+  of different servers and refreshes are directly comparable.
+- **Resolution:** eighth-cell steps with `▏▎▍▌▋▊▉█`. Any traffic above zero
+  shows at least `▏`, even when the rate rounds to `0.00 MB/s`.
+- **Colors:** rx green (terminal palette green), tx a muted red
+  (256-color #af5f5f; palette red on 8-color terminals). The muted red keeps a
+  contrast of at least 3:1 on common light and dark backgrounds (white,
+  Solarized Light, black, #1e1e1e, One Dark). The empty part of a bar is
+  dimmed. `NO_COLOR` turns colors off.
+- **Width:** the bars fill the space after the name and rate columns, at
+  most as wide as the CPU/memory bars and at least 4 cells (20 cells at 60
+  columns, 36 at 110). `--check` uses the same rx-above-tx rows with 10-cell
+  bars and no colors.
+- **Height:** the Network section needs 1 heading row plus 2 rows per
+  interface (5 rows for two interfaces) and a blank separator. The detail
+  view does not scroll, so on short terminals the sections at the bottom are
+  cut off: with two disks and two interfaces the Network section is fully
+  visible from a terminal height of 20 rows.
+- **ASCII:** with `ascii = 1` (or a non-UTF-8 locale) bars use `#` and `.`
+  like the other bars, in whole cells.
+
+*Physical* interfaces are real NICs, not loopback, bridges, tunnels, Docker,
+veth or other virtual interfaces:
+
+- **Linux:** interfaces from `/proc/net/dev` that have a `device` link in
+  `/sys/class/net/<name>/` (PCI, USB, SDIO or platform NICs such as `eth0`,
+  `wlan0`, `enp3s0`, `wlp2s0`). Names of known virtual types (`lo`, `veth*`,
+  `docker*`, `br-*`, `virbr*`, `tun*`, `wg*`, `bond*`, …) are always excluded.
+  Without sysfs the usual NIC names (`eth*`, `en*`, `wl*`, `ww*`, `em*`,
+  `ib*`) are used instead.
+- **macOS:** the `en0`, `en1`, … interfaces from `netstat -ibn`. Idle ports
+  (for example unused Thunderbolt ports) are listed with 0.00 MB/s.
+- **FreeBSD and other systems:** no per-interface rates; the Network section
+  shows a note instead.
+
+Interfaces that are physical but down are still listed (with 0.00 MB/s).
+
 ## Features: implemented vs. planned
 
 | ServerCat feature | Status |
 |---|---|
 | Server list with add / edit / delete / reorder, persisted | ✅ |
 | Live status per server (online, CPU %, memory %, load, uptime, OS) | ✅ |
-| Detail view: CPU (user/sys/iowait), memory, swap, load, network rx/tx rate, disks, top processes | ✅ |
+| Detail view: CPU (user/sys/iowait), memory, swap, load, disks, rx/tx per physical network interface in MB/s, top processes | ✅ |
 | Process list with sorting and SIGTERM | ✅ |
 | Interactive SSH terminal | ✅ (your normal `ssh` in the same terminal window) |
 | Snippets (saved commands) run on a server | ✅ |
@@ -185,7 +246,7 @@ tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
   (`ssh … -- host 'sh -s' < metrics.sh`). Nothing is installed remotely, and
   the remote login shell doesn't matter. It samples `/proc/stat` and
   `/proc/net/dev` one second apart for CPU and network rates and prints
-  `key=value` lines.
+  `key=value` lines (`netif=name|rx|tx` in bytes/s per physical interface).
 - **Robustness:** each run has `ConnectTimeout`, `ServerAliveInterval` and a
   hard kill timeout (macOS has no `timeout(1)`; `sc_run_timeout` implements
   it). ssh errors are turned into short messages ("authentication failed",

@@ -18,12 +18,16 @@ sc_ui_colors() {
     n=$(tput colors 2>/dev/null) || n=0
     C_RESET=$'\e[0m' C_BOLD=$'\e[1m' C_DIM=$'\e[2m' C_NORM=$'\e[22;39m'
     C_HDR=$'\e[7m' C_FOOT=$'\e[7m' C_SEL=$'\e[7m' C_EDIT=$'\e[4m'
-    C_RED= C_GREEN= C_YELLOW= C_CYAN=
+    C_RED= C_GREEN= C_YELLOW= C_CYAN= C_RX= C_TX=
     if [[ -z ${NO_COLOR:-} ]] && ((n >= 8)); then
         C_RED=$'\e[31m' C_GREEN=$'\e[32m' C_YELLOW=$'\e[33m' C_CYAN=$'\e[36m'
         C_HDR=$'\e[1;97;44m' C_FOOT=$'\e[30;47m'
+        # Network bars: rx green, tx red; muted red (#af5f5f) where available,
+        # it stays readable on both light and dark backgrounds.
+        C_RX=$C_GREEN C_TX=$C_RED
         if ((n >= 256)); then
             C_SEL=$'\e[48;5;24m' C_FOOT=$'\e[38;5;252;48;5;237m' C_EDIT=$'\e[4;48;5;236m'
+            C_TX=$'\e[38;5;131m'
         fi
     fi
 }
@@ -238,7 +242,9 @@ sc_ui_render() {
     for ((i = 0; i < SC_ROWS; i++)); do
         line=${SC_FRAME[i]-}
         [[ -v SC_SCREEN[i] && ${SC_SCREEN[i]} == "$line" ]] && continue
-        out+=$'\e['"$((i + 1))"';1H'"$line"$'\e[0m\e[K'
+        # Clear first: with autowrap off the cursor stays on the last column
+        # after a full-width row, and a trailing erase would remove that cell.
+        out+=$'\e['"$((i + 1))"$';1H\e[0m\e[K'"$line"$'\e[0m'
         SC_SCREEN[i]=$line
     done
     [[ -n $out ]] && printf '%s' "$out"
@@ -268,6 +274,32 @@ sc_ui_bar() {
     sc_repeat "$SC_G_EMPTY" $((w - fill))
     sc_level_color "$pct"
     REPLY="$SC_LEVEL$full$C_NORM$C_DIM$REPLY$C_NORM"
+}
+
+# Bar for a rate of $1 bytes/s on a fixed scale (SC_RATE_FULL = 100 MB/s =
+# full bar) with width $2 cells, in eighth-cell steps (whole cells in ASCII
+# mode). Faster rates fill the bar; any traffic above zero shows at least the
+# smallest step. Sets REPLY to the filled part, SC_BAR_REST to the empty
+# part (both unstyled) and SC_BAR_UNITS to the filled steps.
+SC_RATE_FULL=100000000
+sc_rate_bar() {
+    local v=$1 w=$2 steps=8 max units fill
+    [[ $v =~ ^[0-9]+$ ]] || v=0
+    ((${#SC_G_EIGHTHS[@]} == 8)) || steps=1
+    max=$((w * steps))
+    if ((10#$v >= SC_RATE_FULL)); then
+        units=$max
+    else
+        units=$(((10#$v * max + SC_RATE_FULL / 2) / SC_RATE_FULL))
+        ((10#$v > 0 && units == 0)) && units=1
+    fi
+    SC_BAR_UNITS=$units
+    sc_repeat "$SC_G_FULL" $((units / steps))
+    fill=$REPLY
+    ((units % steps)) && fill+=${SC_G_EIGHTHS[units % steps]}
+    sc_repeat "$SC_G_EMPTY" $((w - (units + steps - 1) / steps))
+    SC_BAR_REST=$REPLY
+    REPLY=$fill
 }
 
 # Shows a yes/no question in the status line; returns 0 on y/Y.

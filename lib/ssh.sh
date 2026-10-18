@@ -201,7 +201,7 @@ sc_metrics_clear() {
 # Parses a result file. Unknown keys are ignored and all values are stripped
 # of control characters.
 sc_metrics_load() {
-    local name=$1 file=$2 line key disks=() procs=()
+    local name=$1 file=$2 line key disks=() procs=() netifs=()
     sc_metrics_clear "$name"
     [[ -r $file ]] || return 1
     while IFS= read -r line; do
@@ -209,6 +209,7 @@ sc_metrics_load() {
         sc_sanitize "${line#*=}"
         case $key in
             disk) disks+=("$REPLY") ;;
+            netif) [[ $REPLY =~ ^[A-Za-z0-9._@-]+\|[0-9]+\|[0-9]+$ ]] && netifs+=("$REPLY") ;;
             proc) procs+=("$REPLY") ;;
             rc | ts | err | os | hostname | kernel | distro | uptime | load | cores | proc_count | \
                 cpu_* | mem_* | swap_* | net_*)
@@ -217,6 +218,7 @@ sc_metrics_load() {
     done <"$file"
     local IFS=$'\n'
     SC_M[$name|disks]="${disks[*]}"
+    SC_M[$name|netifs]="${netifs[*]}"
     SC_M[$name|procs]="${procs[*]}"
 }
 

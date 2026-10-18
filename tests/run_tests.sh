@@ -235,7 +235,10 @@ cpu_busy=31.2
 mem_total=8000000
 mem_used=2000000
 swap_total=0
-net_rx=12345
+netif=eth0|523000|12000
+netif=wlan0|0|0
+netif=bad name|1|2
+netif=eth1|x|1
 disk=/|41000000|21000000|52
 disk=/data|100000000|10000000|10
 proc=1|root|0.0|0.1|1200|systemd
@@ -244,11 +247,13 @@ bogus=ignored
 EOF
 printf 'hostname=\e]0;pwned\a-x\n' >>"$TMP/res"
 sc_metrics_load web2 "$TMP/res"
+cp "$TMP/res" "$TMP/res.full"
 assert "online" sc_metrics_online web2
 eq "cpu" 31.2 "${SC_M[web2|cpu_busy]}"
 eq "two disks" 2 "$(grep -c . <<<"${SC_M[web2|disks]}")"
 eq "process with spaces kept" "900|www-data|25.5|3.2|250000|nginx: worker process" "$(sed -n 2p <<<"${SC_M[web2|procs]}")"
 eq "unknown key ignored" "" "${SC_M[web2|bogus]-}"
+eq "valid netif lines kept, malformed dropped" $'eth0|523000|12000\nwlan0|0|0' "${SC_M[web2|netifs]}"
 eq "control chars stripped" "]0;pwned-x" "${SC_M[web2|hostname]}"
 sc_sort_procs web2 cpu
 eq "sort by cpu" 900 "${SC_PROC_ROWS[0]%%|*}"
@@ -281,7 +286,99 @@ eq "unknown server is an error" "servercat: error: unknown server 'nope' (see --
 sc_cli_check nope 2>/dev/null; eq "unknown server exit 2" 2 "$?"
 eq "help names the default config dir" 1 "$("$SC_ROOT/servercat" --config-dir "$TMP/other" --help | grep -c "instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}\$")"
 
+section "section order (CPU, Disks, Network, processes)"
+# Renders into stdout instead of the terminal; prints the row of the first
+# line matching each section marker.
+order_of() {
+    awk '/(^|  )CPU /{c=c?c:NR} /Disks|  Disk  /{d=d?d:NR} /Network/{n=n?n:NR} /PID USER/{p=p?p:NR}
+         END { print (c && c < d && d < n && n < p) ? "ordered" : "c=" c " d=" d " n=" n " p=" p }'
+}
+SC_G_FULL='█' SC_G_EMPTY='░' SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
+sc_metrics_load web2 "$TMP/res.full"
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail web2)
+eq "detail view order" ordered "$(order_of <<<"$detail")"
+# Network rows of a rendered detail view: from the "Network" heading up to
+# the next blank line, trailing padding removed.
+net_rows() {
+    awk '/^  Network/ { on = 1; next } on && /^ *$/ { exit } on' | sed 's/ *$//'
+}
+r32=$(printf '░%.0s' {1..32}) r33=$(printf '░%.0s' {1..33})
+pad=$(printf '%14s' '')
+eq "detail: rx row above tx row, name only on rx (100 cols: 33-cell bars)" "  eth0        rx   0.52 MB/s  ▏$r32
+${pad}tx   0.01 MB/s  ▏$r32
+  wlan0       rx   0.00 MB/s  $r33
+${pad}tx   0.00 MB/s  $r33" "$(net_rows <<<"$detail")"
+eq "detail: 2 rows per interface" 4 "$(net_rows <<<"$detail" | grep -c .)"
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=60; sc_draw_detail web2)
+eq "detail at 60 columns: rows 50 wide (20-cell bars)" "50 50 50 50" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
+eq "detail order at 60 columns" ordered "$(order_of <<<"$detail")"
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=110; sc_draw_detail web2)
+eq "detail at 110 columns: rows 66 wide (36-cell bars)" "66 66 66 66" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
+eq "network section height: heading + 2 per interface + blank" 6 "$(awk '/^  Network/ { on = 1 } on { n++ } on && /^ *$/ { exit } END { print n }' <<<"$detail")"
+summary=$(sc_print_summary web2)
+eq "--check order" ordered "$(order_of <<<"$summary")"
+r9=$(printf '░%.0s' {1..9}) r10=$(printf '░%.0s' {1..10})
+eq "--check: rx above tx, 10-cell bars" "  Network   eth0       rx   0.52 MB/s  ▏$r9
+                       tx   0.01 MB/s  ▏$r9
+  Network   wlan0      rx   0.00 MB/s  $r10
+                       tx   0.00 MB/s  $r10" "$(grep -E '^  Network|^ {23}tx' <<<"$summary")"
+printf 'rc=0\nts=1\nos=FreeBSD\nnet_note=per-interface rates are not collected on FreeBSD\n' >"$TMP/res3"
+sc_metrics_load web2 "$TMP/res3"
+eq "--check shows the limitation" "  Network   per-interface rates are not collected on FreeBSD" "$(sc_print_summary web2 | grep Network)"
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail web2)
+eq "detail shows the limitation" 1 "$(grep -c '^  per-interface rates are not collected on FreeBSD' <<<"$detail")"
+
+section "network rate bars (100 MB/s = full bar)"
+bar() { # rate width -> "filled|rest|units"
+    sc_rate_bar "$1" "$2"
+    printf '%s|%s|%s' "$REPLY" "$SC_BAR_REST" "$SC_BAR_UNITS"
+}
+eq "0 MB/s is empty" "|░░░░░░░░░░|0" "$(bar 0 10)"
+eq "50 MB/s is half" "█████|░░░░░|40" "$(bar 50000000 10)"
+eq "100 MB/s is full" "██████████||80" "$(bar 100000000 10)"
+eq "150 MB/s is clamped to full" "██████████||80" "$(bar 150000000 10)"
+eq "12.5 MB/s uses eighth cells" "█▎|░░░░░░░░|10" "$(bar 12500000 10)"
+eq "1 byte/s shows the smallest step" "▏|░░░░░░░░░|1" "$(bar 1 10)"
+eq "0.6 MB/s (rounds to 0) still visible" "▏|░░░░░░░░░|1" "$(bar 600000 10)"
+eq "invalid rate is empty" "|░░░░|0" "$(bar x 4)"
+widths=
+for v in 0 1 600000 12500000 33333333 50000000 99999999 100000000 150000000; do
+    for w in 4 7 27; do
+        sc_rate_bar "$v" "$w"; widths+="$((${#REPLY} + ${#SC_BAR_REST} == w))"
+    done
+done
+eq "bar is always exactly the requested width" "$(printf '1%.0s' {1..27})" "$widths"
+SC_DET_LW=12 SC_DET_BW=20 SC_COLS=60; sc_netif_bar_width; eq "bar width at 60 columns (capped at SC_DET_BW)" 20 "$REPLY"
+SC_DET_BW=40 SC_COLS=200; sc_netif_bar_width; eq "bar width capped like other bars" 40 "$REPLY"
+SC_DET_BW=40 SC_COLS=50; sc_netif_bar_width; eq "bar width fills what is left" 20 "$REPLY"
+SC_DET_BW=10 SC_COLS=30; sc_netif_bar_width; eq "bar width minimum" 4 "$REPLY"
+SC_COLS=80
+SC_SET[ascii]=1; sc_glyphs_init
+eq "ascii: no eighth cells" 0 "${#SC_G_EIGHTHS[@]}"
+eq "ascii: 0 MB/s" "|..........|0" "$(bar 0 10)"
+eq "ascii: 50 MB/s" "#####|.....|5" "$(bar 50000000 10)"
+eq "ascii: 150 MB/s clamped" "##########||10" "$(bar 150000000 10)"
+eq "ascii: 12.5 MB/s rounds to whole cells" "#|.........|1" "$(bar 12500000 10)"
+eq "ascii: tiny rate still visible" "#|.........|1" "$(bar 1 10)"
+sc_metrics_load web2 "$TMP/res.full"
+eq "ascii: --check rows" "  Network   eth0       rx   0.52 MB/s  #.........
+                       tx   0.01 MB/s  #........." "$(sc_print_summary web2 | grep -A1 'Network   eth0')"
+SC_SET[ascii]=0 SC_G_FULL='█' SC_G_EMPTY='░' SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
+eq "colors: rx green, tx muted red" $'\e[32m|\e[38;5;131m' "$(TERM=xterm-256color; unset NO_COLOR; sc_ui_colors; printf '%s|%s' "$C_RX" "$C_TX")"
+eq "colors: 8-color tx falls back to palette red" $'\e[31m' "$(TERM=xterm; unset NO_COLOR; sc_ui_colors; printf '%s' "$C_TX")"
+eq "colors: NO_COLOR disables bar colors" "|" "$(TERM=xterm-256color NO_COLOR=1; sc_ui_colors; printf '%s|%s' "$C_RX" "$C_TX")"
+
+eq "renderer clears a row before writing it (keeps the last column)" $'\e[1;1H\e[0m\e[Kabc\e[0m' \
+    "$(SC_ROWS=1 SC_FULL_REDRAW=0 SC_SCREEN=() SC_FRAME=(abc); sc_ui_render)"
+
 section "formatting"
+sc_fmt_mbs 523000; eq "MB/s two decimals" "0.52 MB/s" "$REPLY"
+sc_fmt_mbs 0; eq "MB/s zero" "0.00 MB/s" "$REPLY"
+sc_fmt_mbs 5000; eq "MB/s rounds half up" "0.01 MB/s" "$REPLY"
+sc_fmt_mbs 4999; eq "MB/s rounds down" "0.00 MB/s" "$REPLY"
+sc_fmt_mbs 12345678; eq "MB/s is decimal (1e6), not MiB" "12.35 MB/s" "$REPLY"
+sc_fmt_mbs 125000000; eq "MB/s for 1 Gbit/s" "125.00 MB/s" "$REPLY"
+sc_fmt_mbs abc; eq "MB/s invalid" "-" "$REPLY"
 sc_fmt_duration 93784; eq "duration days" "1d 2h" "$REPLY"
 sc_fmt_duration 3700; eq "duration hours" "1h 1m" "$REPLY"
 sc_fmt_duration 42; eq "duration seconds" "42s" "$REPLY"
@@ -315,6 +412,44 @@ for key in os hostname kernel uptime load cores cpu_busy mem_total mem_used disk
     if grep -q "^$key=" "$TMP/local.out"; then ok "emits $key"; else nok "emits $key"; fi
 done
 eq "no stderr output" "" "$(cat "$TMP/local.err")"
+if [[ $(uname -s) == Darwin ]]; then
+    eq "only en* interfaces on macOS" "" "$(grep '^netif=' "$TMP/local.out" | grep -v '^netif=en[0-9]*|')"
+fi
+assert "emits netif or net_note" grep -Eq '^(netif|net_note)=' "$TMP/local.out"
+
+section "physical interface filter (Linux collector functions, fake /proc and /sys)"
+mkdir -p "$TMP/sys"
+cat >"$TMP/netdev" <<'EOF'
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 9000 10 0 0 0 0 0 0 9000 10 0 0 0 0 0 0
+  eth0: 1000000 10 0 0 0 0 0 0 200000 10 0 0 0 0 0 0
+ wlan0: 50 1 0 0 0 0 0 0 60 1 0 0 0 0 0 0
+enp3s0: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+docker0: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+br-1a2b3c: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+veth12ab: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+  tun0: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+   wg0: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+ virbr0: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+  usb0: 7 0 0 0 0 0 0 0 7 0 0 0 0 0 0 0
+EOF
+for i in lo eth0 wlan0 enp3s0 docker0 br-1a2b3c veth12ab tun0 wg0 virbr0 usb0; do mkdir -p "$TMP/sys/$i"; done
+for i in eth0 wlan0 enp3s0 usb0 veth12ab; do ln -s /dev/null "$TMP/sys/$i/device"; done
+collector() { # function-name args... (runs the POSIX sh functions with the test files)
+    SERVERCAT_METRICS_LIB=1 sh -c '. "$1"; NET_DEV=$2 SYS_NET=$3; shift 3; "$@"' sh \
+        "$SC_ROOT/lib/remote/metrics.sh" "$TMP/netdev" "$NET_SYS" "$@"
+}
+NET_SYS=$TMP/sys
+eq "sysfs: NICs with a device link, virtual names excluded" "eth0 wlan0 enp3s0 usb0 " "$(collector linux_phys_ifaces)"
+NET_SYS=$TMP/no-sysfs
+eq "no sysfs: NIC name patterns" "eth0 wlan0 enp3s0 " "$(collector linux_phys_ifaces)"
+eq "sample only selected interfaces" $'eth0 1000000 200000\nwlan0 50 60' "$(collector linux_net_sample "eth0 wlan0 ")"
+eq "rates over 1 s" $'netif=eth0|523000|12000\nnetif=wlan0|0|0' \
+    "$(collector print_netifs $'eth0 1000 500\nwlan0 5 5' $'eth0 524000 12500\nwlan0 5 5' 1)"
+eq "rates over 2 s, counter reset clamps to 0" $'netif=eth0|500|0' \
+    "$(collector print_netifs 'eth0 1000 900' 'eth0 2000 100' 2)"
+eq "no interfaces gives a note" "net_note=no physical network interface found" "$(collector print_netifs '' '' 1)"
 
 # ------------------------------------------------------------------------------
 if [[ ${SC_TEST_NETWORK:-1} == 1 ]]; then

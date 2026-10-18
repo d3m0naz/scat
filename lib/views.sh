@@ -191,6 +191,26 @@ sc_view_detail() {
 }
 
 # One "label [bar] pct  detail" row of the detail view.
+# One direction of an interface as "rx   0.52 MB/s  ▍░░░": $1 rx|tx, $2 rate
+# in bytes/s, $3 bar width. rx is green, tx muted red. Width: 16 + $3.
+sc_netif_cell() {
+    local c=$C_RX
+    [[ $1 == tx ]] && c=$C_TX
+    sc_fmt_mbs "$2"
+    printf -v SC_NETIF_CELL '%s %11s  ' "$1" "$REPLY"
+    sc_rate_bar "$2" "$3"
+    REPLY="$SC_NETIF_CELL$c$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
+}
+
+# Bar width for the network rows: what is left of the screen after the
+# name and rate columns, at most as wide as the other bars.
+sc_netif_bar_width() {
+    local w=$((SC_COLS - 2 - SC_DET_LW - 16))
+    ((w > SC_DET_BW)) && w=$SC_DET_BW
+    ((w < 4)) && w=4
+    REPLY=$w
+}
+
 sc_detail_bar_line() {
     local label=$1 pct=$2 text=$3 bar pt
     if [[ -n $pct ]]; then
@@ -211,6 +231,7 @@ sc_detail_bar_line() {
 
 sc_draw_detail() {
     local name=$1 rc=${SC_M[$1|rc]-} status line v used total pct mnt size room n=0 row
+    local iface rxv txv blank
     if [[ -z $rc ]]; then
         status="connecting$SC_G_ELL"
     elif ((rc == 0)); then
@@ -266,15 +287,6 @@ sc_draw_detail() {
 
         sc_fit Load "$SC_DET_LW"
         sc_frame_text "" "  $REPLY${SC_M[$name|load]:--}   ${SC_M[$name|proc_count]:-?} processes"
-        sc_fit Network "$SC_DET_LW"
-        line="  $REPLY"
-        if [[ -n ${SC_M[$name|net_rx]-} ]]; then
-            sc_fmt_bytes "${SC_M[$name|net_rx]}"; line+="$SC_G_RX $REPLY/s   "
-            sc_fmt_bytes "${SC_M[$name|net_tx]}"; line+="$SC_G_TX $REPLY/s"
-        else
-            line+="n/a"
-        fi
-        sc_frame_text "" "$line"
         sc_frame_add ""
 
         if [[ -n ${SC_M[$name|disks]-} ]]; then
@@ -288,6 +300,25 @@ sc_draw_detail() {
             done <<<"${SC_M[$name|disks]}"
             sc_frame_add ""
         fi
+
+        sc_frame_text "$C_BOLD" "  Network"
+        if [[ -n ${SC_M[$name|netifs]-} ]]; then
+            n=0
+            sc_netif_bar_width; v=$REPLY
+            sc_repeat ' ' "$SC_DET_LW"; blank=$REPLY
+            # Two rows per interface: rx with the name, tx below it.
+            while IFS='|' read -r iface rxv txv; do
+                ((n++ < 6)) || break
+                sc_fit "$iface" "$SC_DET_LW"; line="  $C_BOLD$REPLY$C_NORM"
+                sc_netif_cell rx "$rxv" "$v"
+                SC_FRAME+=("$line$REPLY$C_RESET")
+                sc_netif_cell tx "$txv" "$v"
+                SC_FRAME+=("  $blank$REPLY$C_RESET")
+            done <<<"${SC_M[$name|netifs]}"
+        else
+            sc_frame_text "$C_DIM" "  ${SC_M[$name|net_note]:-no network data}"
+        fi
+        sc_frame_add ""
 
         room=$((SC_ROWS - 2 - ${#SC_FRAME[@]} - 1))
         if ((room > 0)); then
