@@ -36,13 +36,17 @@ declare -gA SC_SNIP=() # snippet name -> command
 
 declare -gA SC_SET=(
     [list_refresh]=15 [detail_refresh]=5 [connect_timeout]=5
-    [command_timeout]=20 [snippet_timeout]=60 [multiplex]=1 [ascii]=0
+    [command_timeout]=20 [snippet_timeout]=60 [multiplex]=1 [ascii]=0 [theme]=default
 )
 declare -gA SC_SET_LIMITS=(
     [list_refresh]="5 3600" [detail_refresh]="2 3600" [connect_timeout]="1 60"
     [command_timeout]="5 600" [snippet_timeout]="5 3600" [multiplex]="0 1" [ascii]="0 1"
 )
-SC_SET_ORDER=(list_refresh detail_refresh connect_timeout command_timeout snippet_timeout multiplex ascii)
+# Settings with a fixed list of values instead of a number range.
+declare -gA SC_SET_CHOICES=(
+    [theme]="default light solarized nord high-contrast"
+)
+SC_SET_ORDER=(list_refresh detail_refresh connect_timeout command_timeout snippet_timeout multiplex ascii theme)
 
 sc_config_paths() {
     SC_SERVERS_FILE=$SC_CONFIG_DIR/servers.conf
@@ -372,7 +376,20 @@ sc_config_emit_default_settings() {
 # multiplex = 1
 # Use plain ASCII instead of Unicode glyphs (0/1)
 # ascii = 0
+# Color theme: default, light (light terminals), solarized, nord, high-contrast.
+# NO_COLOR in the environment turns colors off in every theme.
+# theme = default
 EOF
+}
+
+# Checks $2 against the allowed values of setting $1.
+sc_setting_choice() {
+    local c
+    for c in ${SC_SET_CHOICES[$1]}; do
+        [[ $2 == "$c" ]] && return 0
+    done
+    SC_ERR="must be one of: ${SC_SET_CHOICES[$1]// /, } (got '$2')"
+    return 1
 }
 
 sc_config_load_settings() {
@@ -387,7 +404,13 @@ _sc_settings_section() {
 
 _sc_settings_key() {
     local limits=${SC_SET_LIMITS[$2]-}
-    if [[ -z $limits ]]; then
+    if [[ -n ${SC_SET_CHOICES[$2]-} ]]; then
+        if sc_setting_choice "$2" "$3"; then
+            SC_SET[$2]=$3
+        else
+            sc_config_warn "settings.conf:$4: $2 $SC_ERR"
+        fi
+    elif [[ -z $limits ]]; then
         sc_config_warn "settings.conf:$4: unknown setting '$2' ignored"
     elif sc_valid_int "$3" ${limits}; then
         SC_SET[$2]=$((10#$3))

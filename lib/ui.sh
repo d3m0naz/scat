@@ -13,23 +13,60 @@ SC_MSG= SC_MSG_LEVEL=info
 SC_KEY= SC_KEY_PENDING=
 declare -ga SC_FRAME=() SC_SCREEN=()
 
+# Color themes. Every color of the UI comes from these tokens, set here:
+#   C_HDR title bar      C_FOOT footer          C_SEL selected row (background
+#   C_EDIT edited field  C_DIM secondary text      only; the row keeps its colors)
+#   C_ACCENT headings, info messages   C_OK online, low usage
+#   C_WARN warnings, medium usage      C_CRIT errors, high usage
+#   C_RX / C_TX network bars
+# Themes assume the terminal's own background and text color and never set
+# them: default and nord/solarized/high-contrast expect a dark terminal,
+# light a light one. NO_COLOR or fewer than 8 colors: no colors in any theme,
+# only bold, reverse video and underline.
+SC_THEMES=(default light solarized nord high-contrast)
+
 sc_ui_colors() {
-    local n
+    local n theme=${SC_SET[theme]:-default}
     n=$(tput colors 2>/dev/null) || n=0
     C_RESET=$'\e[0m' C_BOLD=$'\e[1m' C_DIM=$'\e[2m' C_NORM=$'\e[22;39m'
     C_HDR=$'\e[7m' C_FOOT=$'\e[7m' C_SEL=$'\e[7m' C_EDIT=$'\e[4m'
-    C_RED= C_GREEN= C_YELLOW= C_CYAN= C_RX= C_TX=
-    if [[ -z ${NO_COLOR:-} ]] && ((n >= 8)); then
-        C_RED=$'\e[31m' C_GREEN=$'\e[32m' C_YELLOW=$'\e[33m' C_CYAN=$'\e[36m'
-        C_HDR=$'\e[1;97;44m' C_FOOT=$'\e[30;47m'
-        # Network bars: rx green, tx red; muted red (#af5f5f) where available,
-        # it stays readable on both light and dark backgrounds.
-        C_RX=$C_GREEN C_TX=$C_RED
-        if ((n >= 256)); then
+    C_ACCENT= C_OK= C_WARN= C_CRIT= C_RX= C_TX=
+    [[ -z ${NO_COLOR:-} ]] && ((n >= 8)) || return 0
+
+    # 8/16 colors: the terminal palette, shared by all themes except
+    # high-contrast, which uses the bright colors.
+    C_ACCENT=$'\e[36m' C_OK=$'\e[32m' C_WARN=$'\e[33m' C_CRIT=$'\e[31m'
+    C_HDR=$'\e[1;97;44m' C_FOOT=$'\e[30;47m'
+    if [[ $theme == high-contrast ]]; then
+        C_ACCENT=$'\e[96m' C_OK=$'\e[92m' C_WARN=$'\e[93m' C_CRIT=$'\e[91m'
+        C_HDR=$'\e[1;30;107m' C_FOOT=$'\e[97;44m' C_SEL=$'\e[44m' C_DIM=
+    fi
+    C_RX=$C_OK C_TX=$C_CRIT
+    ((n >= 256)) || return 0
+
+    # 256 colors (xterm palette numbers). Contrast was checked against the
+    # assumed terminal background: at least 4.5:1 for text, 3:1 for bars.
+    case $theme in
+        light) # white background
+            C_ACCENT=$'\e[38;5;25m' C_OK=$'\e[38;5;28m' C_WARN=$'\e[38;5;130m' C_CRIT=$'\e[38;5;124m'
+            C_DIM=$'\e[38;5;242m' C_SEL=$'\e[48;5;153m' C_EDIT=$'\e[4;48;5;254m'
+            C_HDR=$'\e[1;38;5;231;48;5;25m' C_FOOT=$'\e[38;5;235;48;5;252m' ;;
+        solarized) # Solarized Dark, background base03 #002b36
+            C_ACCENT=$'\e[38;5;37m' C_OK=$'\e[38;5;106m' C_WARN=$'\e[38;5;178m' C_CRIT=$'\e[38;5;203m'
+            C_DIM=$'\e[38;5;246m' C_SEL=$'\e[48;5;235m' C_EDIT=$'\e[4;48;5;235m'
+            C_HDR=$'\e[1;38;5;234;48;5;37m' C_FOOT=$'\e[38;5;247;48;5;235m' ;;
+        nord) # Nord, background nord0 #2e3440
+            C_ACCENT=$'\e[38;5;110m' C_OK=$'\e[38;5;108m' C_WARN=$'\e[38;5;222m' C_CRIT=$'\e[38;5;174m'
+            C_DIM=$'\e[38;5;247m' C_SEL=$'\e[48;5;24m' C_EDIT=$'\e[4;48;5;238m'
+            C_HDR=$'\e[1;38;5;236;48;5;110m' C_FOOT=$'\e[38;5;188;48;5;238m' ;;
+        high-contrast) # black background
+            C_SEL=$'\e[48;5;21m' C_FOOT=$'\e[97;48;5;236m' C_EDIT=$'\e[1;4;48;5;236m' ;;
+        *) # default: the original colors; tx is a muted red (#af5f5f)
             C_SEL=$'\e[48;5;24m' C_FOOT=$'\e[38;5;252;48;5;237m' C_EDIT=$'\e[4;48;5;236m'
             C_TX=$'\e[38;5;131m'
-        fi
-    fi
+            return 0 ;;
+    esac
+    C_RX=$C_OK C_TX=$C_CRIT
 }
 
 # --- terminal state -----------------------------------------------------------
@@ -231,9 +268,9 @@ sc_ui_end_frame() {
     ((${#right} > SC_COLS / 2)) && right=
     if [[ -n $SC_MSG ]]; then
         case $SC_MSG_LEVEL in
-            error) color=$C_RED$C_BOLD ;;
-            warn) color=$C_YELLOW ;;
-            *) color=$C_CYAN ;;
+            error) color=$C_CRIT$C_BOLD ;;
+            warn) color=$C_WARN ;;
+            *) color=$C_ACCENT ;;
         esac
         sc_fit " $SC_MSG" $((SC_COLS - ${#right}))
         line=$color$REPLY$C_RESET
@@ -279,11 +316,11 @@ sc_ui_render() {
 
 sc_level_color() {
     if (($1 >= 85)); then
-        SC_LEVEL=$C_RED
+        SC_LEVEL=$C_CRIT
     elif (($1 >= 60)); then
-        SC_LEVEL=$C_YELLOW
+        SC_LEVEL=$C_WARN
     else
-        SC_LEVEL=$C_GREEN
+        SC_LEVEL=$C_OK
     fi
 }
 
@@ -303,13 +340,16 @@ sc_ui_bar() {
 # Bar for a rate of $1 bytes/s on a fixed scale (SC_RATE_FULL = 100 MB/s =
 # full bar) with width $2 cells, in eighth-cell steps (whole cells in ASCII
 # mode). Faster rates fill the bar; any traffic above zero shows at least the
-# smallest step. Sets REPLY to the filled part, SC_BAR_REST to the empty
+# smallest step. With $3 = hatch and a hatch glyph (high-contrast theme) the
+# bar uses whole hatched cells. Sets REPLY to the filled part, SC_BAR_REST to the empty
 # part (both unstyled) and SC_BAR_UNITS to the filled steps.
 SC_RATE_FULL=100000000
 sc_rate_bar() {
-    local v=$1 w=$2 steps=8 max units fill
+    local v=$1 w=$2 steps=8 max units fill full=$SC_G_FULL
     [[ $v =~ ^[0-9]+$ ]] || v=0
     ((${#SC_G_EIGHTHS[@]} == 8)) || steps=1
+    # $3 = hatch: whole cells of SC_G_HATCH (tx in the high-contrast theme).
+    [[ ${3-} == hatch && -n ${SC_G_HATCH-} ]] && steps=1 full=$SC_G_HATCH
     max=$((w * steps))
     if ((10#$v >= SC_RATE_FULL)); then
         units=$max
@@ -318,7 +358,7 @@ sc_rate_bar() {
         ((10#$v > 0 && units == 0)) && units=1
     fi
     SC_BAR_UNITS=$units
-    sc_repeat "$SC_G_FULL" $((units / steps))
+    sc_repeat "$full" $((units / steps))
     fill=$REPLY
     ((units % steps)) && fill+=${SC_G_EIGHTHS[units % steps]}
     sc_repeat "$SC_G_EMPTY" $((w - (units + steps - 1) / steps))
@@ -330,7 +370,7 @@ sc_rate_bar() {
 sc_ui_confirm() {
     local row=$((SC_ROWS - 2))
     sc_fit " $1 [y/N]" "$SC_COLS"
-    SC_FRAME[row]=$C_YELLOW$C_BOLD$REPLY$C_RESET
+    SC_FRAME[row]=$C_WARN$C_BOLD$REPLY$C_RESET
     sc_ui_render
     until sc_read_key 1; do :; done
     [[ $SC_KEY == [yY] ]]
@@ -339,7 +379,7 @@ sc_ui_confirm() {
 # Shows message $1 in the status line immediately (before a blocking call).
 sc_ui_flash() {
     sc_fit " $1" "$SC_COLS"
-    SC_FRAME[SC_ROWS - 2]=$C_CYAN$REPLY$C_RESET
+    SC_FRAME[SC_ROWS - 2]=$C_ACCENT$REPLY$C_RESET
     sc_ui_render
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/expect -f
-# Drives the TUI in a pseudo-terminal: add a server through the form, open
-# the detail view (unreachable TEST-NET host), help, quit; then check that
+# Drives the TUI in a pseudo-terminal (with --theme high-contrast): add a
+# server through the form, open the detail view (unreachable TEST-NET host),
+# help (shows the theme), quit; then check that
 # the terminal settings were restored. Usage: tests/tui_smoke.exp <config-dir>
 
 set timeout 15
@@ -24,7 +25,7 @@ proc want {pattern step} {
 
 set env(TERM) xterm-256color
 set stty_init "rows 30 columns 100"
-spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/scat' --config-dir '$cfg'; echo EXIT=\$?; stty -g > '$stty_file.after'"
+spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/scat' --config-dir '$cfg' --theme high-contrast; echo EXIT=\$?; stty -g > '$stty_file.after'"
 
 want "No servers yet" "empty server list shown"
 send "a"
@@ -43,6 +44,7 @@ want "Monitoring uses BatchMode" "detail view opened"
 want "Press .s. to connect" "detail shows error and hints"
 send "\033?"
 want "keyboard reference" "Esc back + help (typeahead kept)"
+want "theme high-contrast" "--theme applied (shown in help)"
 send "q"
 want "TARGET" "help closed, back on list"
 send "q"

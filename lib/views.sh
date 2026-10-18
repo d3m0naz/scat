@@ -196,14 +196,14 @@ sc_server_cells() {
     if [[ -z $rc ]]; then
         CELL_G=$SC_G_HOLLOW
         if [[ -n ${SC_M[$name|loading]-} ]]; then
-            CELL_G_C=$C_YELLOW CELL_INFO="connecting$SC_G_ELL"
+            CELL_G_C=$C_WARN CELL_INFO="connecting$SC_G_ELL"
         else
             CELL_G_C=$C_DIM CELL_INFO="not checked yet"
         fi
     elif ((rc != 0)); then
-        CELL_G=$SC_G_DOT CELL_G_C=$C_RED CELL_INFO=${SC_M[$name|err]:-error} CELL_INFO_C=$C_RED
+        CELL_G=$SC_G_DOT CELL_G_C=$C_CRIT CELL_INFO=${SC_M[$name|err]:-error} CELL_INFO_C=$C_CRIT
     else
-        CELL_G=$SC_G_DOT CELL_G_C=$C_GREEN
+        CELL_G=$SC_G_DOT CELL_G_C=$C_OK
         if sc_int "${SC_M[$name|cpu_busy]-}"; then
             CELL_CPU="$REPLY%"
             sc_level_color "$REPLY"
@@ -225,7 +225,7 @@ sc_server_cells() {
 # One group heading row: "── production ──" in the accent color.
 sc_list_heading() {
     sc_fit "$SC_G_HLINE$SC_G_HLINE $1 $SC_G_HLINE$SC_G_HLINE" $((SC_COLS - 1))
-    REPLY=" $C_BOLD$C_CYAN$REPLY$C_RESET"
+    REPLY=" $C_BOLD$C_ACCENT$REPLY$C_RESET"
 }
 
 sc_draw_servers() {
@@ -339,7 +339,7 @@ sc_netif_bar() {
     h=$((w / 2))
     sc_rate_bar "$1" "$h"
     rx="$C_RX$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
-    sc_rate_bar "$2" $((w - h))
+    sc_rate_bar "$2" $((w - h)) hatch
     REPLY="$rx $C_TX$REPLY$C_NORM$C_DIM$SC_BAR_REST$C_NORM"
 }
 
@@ -415,9 +415,9 @@ sc_draw_detail() {
     fi
     sc_frame_add ""
     if [[ -z $rc ]]; then
-        sc_frame_text "$C_YELLOW" "  Connecting to ${SC_SRV[$name|host]}$SC_G_ELL"
+        sc_frame_text "$C_WARN" "  Connecting to ${SC_SRV[$name|host]}$SC_G_ELL"
     elif ((rc != 0)); then
-        sc_frame_text "$C_RED$C_BOLD" "  ${SC_M[$name|err]:-connection failed}"
+        sc_frame_text "$C_CRIT$C_BOLD" "  ${SC_M[$name|err]:-connection failed}"
         sc_frame_add ""
         sc_frame_text "$C_DIM" "  Monitoring uses BatchMode (no prompts). Press 's' to connect interactively,"
         sc_frame_text "$C_DIM" "  e.g. to accept a new host key; check 'ssh-add -l' or set an identity file with 'e'."
@@ -756,7 +756,7 @@ sc_view_pager() {
 
 sc_view_help() {
     mapfile -t SC_PAGER_LINES <<EOF
-scat $SC_VERSION - keyboard reference
+scat $SC_VERSION - keyboard reference $SC_G_SEP theme ${SC_SET[theme]}
 
 Everywhere
   Up/Down, j/k        move selection        PgUp/PgDn, g/G   page, top/bottom
@@ -786,6 +786,7 @@ Forms
   Line editor: Left/Right, Home/End (Ctrl-A/E), Backspace/Del, Ctrl-U/Ctrl-K
 
 Config: $SC_CONFIG_DIR
+Theme:  ${SC_SET[theme]}  (theme = ... in settings.conf, or scat --theme NAME)
 EOF
     sc_view_pager "Help"
 }

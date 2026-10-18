@@ -183,6 +183,16 @@ command = df -h
 | `snippet_timeout` | 60 | 5–3600 | hard limit for one snippet run |
 | `multiplex` | 1 | 0/1 | reuse connections via ssh ControlMaster |
 | `ascii` | 0 | 0/1 | ASCII instead of Unicode glyphs |
+| `theme` | default | see below | color theme of the TUI |
+
+**Themes:** `default` (the original colors, for dark terminals), `light`
+(for light terminal backgrounds), `solarized` (Solarized Dark), `nord`
+(Nord) and `high-contrast` (bright colors on black; tx bars are hatched and
+empty bar cells dotted, so rx and tx differ without color). Themes only set
+text and accent colors; the terminal's own background is kept. `scat --theme
+NAME` overrides the setting for one run; an unknown name in `settings.conf`
+gives a warning and `default`. `NO_COLOR` turns colors off in every theme,
+and the help screen (`?`) shows the active theme.
 
 Comments must be on their own lines (`#` or `;`). Text after `=` is taken
 literally.

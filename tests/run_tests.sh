@@ -561,6 +561,64 @@ help=$(sc_view_pager() { printf '%s\n' "${SC_PAGER_LINES[@]}"; }; sc_view_help)
 eq "help lists the scroll keys" 2 "$(grep -c 'scroll one row\|top / bottom' <<<"$help")"
 eq "help lines fit 80 columns (79 + pager margin)" 0 "$(while IFS= read -r l; do ((${#l} > 79)) && echo x; done <<<"$help" | grep -c x)"
 
+section "color themes"
+tokens() { # theme term [NO_COLOR] -> all color tokens, one per line
+    (
+        TERM=$2
+        if [[ -n ${3-} ]]; then export NO_COLOR=1; else unset NO_COLOR; fi
+        SC_SET[theme]=$1
+        sc_ui_colors
+        printf '%q\n' "$C_HDR" "$C_FOOT" "$C_SEL" "$C_EDIT" "$C_DIM" "$C_ACCENT" "$C_OK" "$C_WARN" "$C_CRIT" "$C_RX" "$C_TX"
+    )
+}
+# The colors before themes existed; default must keep them exactly.
+eq "default, 256 colors: unchanged codes" "$(printf '%q\n' $'\e[1;97;44m' $'\e[38;5;252;48;5;237m' $'\e[48;5;24m' $'\e[4;48;5;236m' $'\e[2m' $'\e[36m' $'\e[32m' $'\e[33m' $'\e[31m' $'\e[32m' $'\e[38;5;131m')" "$(tokens default xterm-256color)"
+eq "default, 8 colors: unchanged codes" "$(printf '%q\n' $'\e[1;97;44m' $'\e[30;47m' $'\e[7m' $'\e[4m' $'\e[2m' $'\e[36m' $'\e[32m' $'\e[33m' $'\e[31m' $'\e[32m' $'\e[31m')" "$(tokens default xterm)"
+nocolor=$(printf '%q\n' $'\e[7m' $'\e[7m' $'\e[7m' $'\e[4m' $'\e[2m' '' '' '' '' '' '')
+for t in "${SC_THEMES[@]}"; do
+    eq "$t: NO_COLOR wins (no colors, only reverse/underline/faint)" "$nocolor" "$(tokens "$t" xterm-256color 1)"
+done
+eq "five themes" "default light solarized nord high-contrast" "${SC_THEMES[*]}"
+eq "themes differ from each other (256 colors)" 5 "$(for t in "${SC_THEMES[@]}"; do tokens "$t" xterm-256color | paste -sd ' ' -; done | sort -u | wc -l | tr -d ' ')"
+eq "high-contrast uses bright colors on 8/16-color terminals" $'\e[92m|\e[91m' "$(TERM=xterm; unset NO_COLOR; SC_SET[theme]=high-contrast; sc_ui_colors; printf '%s|%s' "$C_RX" "$C_TX")"
+
+printf '[settings]\ntheme = solarized\n' >"$TMP/theme.conf"
+eq "theme setting is read" solarized "$(SC_SETTINGS_FILE=$TMP/theme.conf; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s' "${SC_SET[theme]}")"
+printf '[settings]\ntheme = purple\n' >"$TMP/theme.conf"
+eq "invalid theme: warning, default kept" "default|settings.conf:2: theme must be one of: default, light, solarized, nord, high-contrast (got 'purple')" \
+    "$(SC_SETTINGS_FILE=$TMP/theme.conf; SC_SET[theme]=default; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s|%s' "${SC_SET[theme]}" "${SC_CONFIG_WARNINGS[0]-}")"
+eq "--theme with an unknown name is an error" "scat: --theme must be one of: default, light, solarized, nord, high-contrast (got 'purple')|1" \
+    "$("$SC_ROOT/scat" --config-dir "$TMP/themecfg" --theme purple --list 2>&1 | tr -d '\n'; printf '|%s' "${PIPESTATUS[0]}")"
+eq "--theme with a valid name is accepted" 0 "$("$SC_ROOT/scat" --config-dir "$TMP/themecfg" --theme nord --list >/dev/null 2>&1; printf '%s' "$?")"
+eq "--theme without a name is an error" 1 "$("$SC_ROOT/scat" --config-dir "$TMP/themecfg" --theme >/dev/null 2>&1; printf '%s' "$?")"
+
+# Every theme draws the list and the detail view at 80x24 without overflow.
+sc_metrics_load web2 "$TMP/res.full"
+for t in "${SC_THEMES[@]}"; do
+    f=$(
+        sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+        TERM=xterm-256color; unset NO_COLOR
+        SC_SET[theme]=$t SC_SET[ascii]=0; sc_glyphs_init; sc_ui_colors
+        SC_ROWS=24 SC_COLS=80 SC_DET_SCROLL=0
+        sc_list_build; sc_draw_servers 0 0; sc_draw_detail web2
+    )
+    plain=$(sed $'s/\e\\[[0-9;]*[mK]//g' <<<"$f")
+    eq "$t: list + detail are 2 x 24 rows" 48 "$(wc -l <<<"$plain" | tr -d ' ')"
+    eq "$t: no row wider than 80 columns" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$plain" | grep -c x)"
+done
+
+hc_bar() { # ascii rx tx -> split bar without colors, high-contrast theme
+    (
+        SC_SET[theme]=high-contrast SC_SET[ascii]=$1; sc_glyphs_init
+        sc_netif_bar "$2" "$3" 21
+        sed $'s/\e\\[[0-9;]*m//g' <<<"$REPLY"
+    )
+}
+eq "high-contrast: rx solid, tx hatched, empty cells dotted" "█████····· ▒▒▒▒▒·····" "$(hc_bar 0 50000000 50000000)"
+eq "high-contrast ascii: rx '#', tx '='" "#####..... =====....." "$(hc_bar 1 50000000 50000000)"
+eq "other themes: tx bar not hatched" "█████░░░░░ █████░░░░░" "$(SC_SET[theme]=nord SC_SET[ascii]=0; sc_glyphs_init; sc_netif_bar 50000000 50000000 21; sed $'s/\e\\[[0-9;]*m//g' <<<"$REPLY")"
+SC_SET[theme]=default SC_SET[ascii]=0; sc_glyphs_init
+
 section "formatting"
 sc_fmt_mbs 523000; eq "MB/s two decimals" "0.52 MB/s" "$REPLY"
 sc_fmt_mbs 0; eq "MB/s zero" "0.00 MB/s" "$REPLY"

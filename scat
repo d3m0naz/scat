@@ -45,6 +45,8 @@ Options:
   -c, --check NAME      collect metrics for one server, print a summary;
                         exit status 0 if it is reachable
       --config-dir DIR  use DIR instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}
+      --theme NAME      color theme for this run (overrides settings.conf):
+                        ${SC_SET_CHOICES[theme]// /, }
   -V, --version         print version
   -h, --help            show this help
 
@@ -74,7 +76,7 @@ sc_tui_main() {
 }
 
 sc_main() {
-    local mode=tui target=
+    local mode=tui target= theme=
     while (($#)); do
         case $1 in
             -h | --help) sc_usage; return 0 ;;
@@ -83,6 +85,11 @@ sc_main() {
             -c | --check)
                 [[ -n ${2:-} ]] || sc_die "--check needs a server name"
                 mode=check target=$2
+                shift
+                ;;
+            --theme)
+                [[ -n ${2:-} ]] || sc_die "--theme needs a name (${SC_SET_CHOICES[theme]// /, })"
+                theme=$2
                 shift
                 ;;
             --config-dir)
@@ -98,6 +105,10 @@ sc_main() {
     sc_config_init || sc_die "$SC_ERR"
     sc_config_legacy_note && SC_CONFIG_NOTE=$REPLY
     sc_config_load_all
+    if [[ -n $theme ]]; then
+        sc_setting_choice theme "$theme" || sc_die "--theme $SC_ERR"
+        SC_SET[theme]=$theme
+    fi
     sc_glyphs_init
     case $mode in
         list) sc_print_warnings; sc_cli_list ;;
