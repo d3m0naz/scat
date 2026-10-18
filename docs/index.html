@@ -70,7 +70,17 @@
   .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .hero { display: flex; gap: 24px; align-items: center; padding: 24px 0; flex-wrap: wrap; }
-  .paw { width: 120px; height: 120px; flex: none; color: var(--accent); }
+  /* Logo: light and dark variant, switched like the colours above
+     (system setting, or the theme button). */
+  .logo { width: 100%; max-width: 470px; }
+  .logo img { display: block; width: 100%; height: auto; }
+  .logo .logo-dark { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .logo .logo-light { display: none; }
+    :root:not([data-theme="light"]) .logo .logo-dark { display: block; }
+  }
+  :root[data-theme="dark"] .logo .logo-light { display: none; }
+  :root[data-theme="dark"] .logo .logo-dark { display: block; }
   h1 { margin: 0; font-size: 32px; letter-spacing: 0.04em; color: var(--accent); }
   .tag { margin: 6px 0 0; color: var(--dim); }
 
@@ -156,18 +166,12 @@
 </header>
 
 <section class="hero" aria-labelledby="top">
-  <svg class="paw" viewBox="0 0 120 120" role="img" aria-label="cat paw logo">
-    <title>cat paw</title>
-    <g fill="currentColor">
-      <ellipse cx="60" cy="78" rx="30" ry="26"/>
-      <ellipse cx="26" cy="46" rx="11" ry="14" transform="rotate(-18 26 46)"/>
-      <ellipse cx="44" cy="26" rx="11" ry="15" transform="rotate(-6 44 26)"/>
-      <ellipse cx="76" cy="26" rx="11" ry="15" transform="rotate(6 76 26)"/>
-      <ellipse cx="94" cy="46" rx="11" ry="14" transform="rotate(18 94 46)"/>
-    </g>
-  </svg>
+  <div class="logo">
+    <img class="logo-light" src="logo-light.svg" width="470" height="160" alt="scat logo">
+    <img class="logo-dark" src="logo-dark.svg" width="470" height="160" alt="" aria-hidden="true">
+  </div>
   <div>
-    <h1 id="top">scat</h1>
+    <h1 id="top" class="sr-only">scat</h1>
     <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
     <p class="tag">scat 0.2.1 · released <time datetime="2026-10-18">2026-10-18</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.1">release notes</a></p>
     <p class="tag"><span class="blink">_</span></p>

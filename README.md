@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/favicon.svg" width="96" alt="scat paw logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo-light.svg" width="470" alt="scat">
+  </picture>
 </p>
 
 # scat
