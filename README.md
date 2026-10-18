@@ -1,8 +1,32 @@
 # scat
 
-A Bash terminal UI to watch and manage servers over SSH: keep a list of
-servers, watch their status and system metrics, look at processes, open a
-shell, and run saved commands. Docker and Kubernetes support are planned (see below).
+**Watch and manage your servers over SSH, from the terminal.**
+
+[![Release](https://img.shields.io/github/v/release/d3m0naz/scat?label=release)](https://github.com/d3m0naz/scat/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Bash 5+](https://img.shields.io/badge/bash-5%2B-4EAA25.svg)](#bash-5-or-newer)
+
+scat is a Bash terminal UI. Keep a list of servers, watch CPU, memory, load,
+disks and network per interface, look at processes, open a shell or run saved
+commands. Your servers need nothing but SSH and a POSIX `sh`. Docker and
+Kubernetes support are planned (see below).
+
+- **Live status** for every server, grouped by your own group names
+- **Detail view** with CPU, memory, swap, load, disks, network bars and processes
+- **Keys only:** no passwords are asked for or stored
+- **Plain config:** INI files, parsed as data and written with mode 600
+- **Five colour themes**, including high-contrast for bright or dim terminals
+- **Few dependencies:** Bash 5 and standard Unix tools, no `jq` or other extras
+
+## Quick start
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
+scat
+```
+
+The installer checks the SHA-256 of the release archive before it installs
+anything. Bash 5 is needed first (see [Bash 5 or newer](#bash-5-or-newer)).
 
 ```
  scat · Servers                                               2 servers · 12:03:55
@@ -382,3 +406,7 @@ tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
 tests/run_tests.sh                       # unit tests (SC_TEST_NETWORK=0 skips the ssh failure tests)
 tests/tui_smoke.exp "$(mktemp -d)/cfg"   # drives the real TUI in a pty via expect
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 d3m0naz.
