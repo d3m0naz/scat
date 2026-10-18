@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# ServerCat for the terminal: monitor and manage servers over SSH.
+
+# This check must stay parseable by old shells (macOS /bin/bash 3.2, zsh, sh).
+if [ -z "${BASH_VERSION:-}" ] || [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then
+    echo "servercat: Bash 5 or newer is required (running: ${BASH_VERSION:-not bash})." >&2
+    echo "Install it with Homebrew:  brew install bash" >&2
+    echo "Then put /opt/homebrew/bin first in your PATH, e.g. in ~/.zshrc:" >&2
+    echo '  export PATH="/opt/homebrew/bin:$PATH"' >&2
+    exit 1
+fi
+
+set -o pipefail
+
+sc_resolve_root() {
+    local src=${BASH_SOURCE[0]} dir
+    while [[ -L $src ]]; do
+        dir=$(cd -P -- "$(dirname -- "$src")" && pwd)
+        src=$(readlink -- "$src")
+        [[ $src == /* ]] || src=$dir/$src
+    done
+    cd -P -- "$(dirname -- "$src")" && pwd
+}
+
+SC_ROOT=$(sc_resolve_root) || exit 1
+
+for _sc_lib in core config ssh ui cli modules views; do
+    # shellcheck source=/dev/null
+    source "$SC_ROOT/lib/$_sc_lib.sh" || {
+        echo "servercat: cannot load $SC_ROOT/lib/$_sc_lib.sh" >&2
+        exit 1
+    }
+done
+unset _sc_lib
+
+sc_usage() {
+    cat <<EOF
+Usage: servercat [options]
+
+Terminal client for monitoring and managing servers over SSH.
+Without options the interactive TUI starts.
+
+Options:
+  -l, --list            print configured servers and exit
+  -c, --check NAME      collect metrics for one server, print a summary;
+                        exit status 0 if it is reachable
+      --config-dir DIR  use DIR instead of ${SC_CONFIG_DIR/#$HOME/\~}
+  -V, --version         print version
+  -h, --help            show this help
+
+Authentication uses SSH keys or ssh-agent only; passwords are never stored.
+EOF
+}
+
+sc_tui_cleanup() {
+    sc_ui_leave
+    sc_runtime_cleanup
+}
+
+sc_tui_main() {
+    [[ -t 0 && -t 1 ]] || sc_die "the TUI needs a terminal (use --list or --check in scripts)"
+    sc_runtime_init || sc_die "cannot create runtime directory in /tmp"
+    trap 'sc_tui_cleanup' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+    sc_ui_colors
+    sc_modules_load
+    sc_ui_init || sc_die "cannot initialise the terminal"
+    if ((${#SC_CONFIG_WARNINGS[@]})); then
+        sc_msg warn "${#SC_CONFIG_WARNINGS[@]} config warning(s), first: ${SC_CONFIG_WARNINGS[0]}"
+    fi
+    sc_view_servers
+}
+
+sc_main() {
+    local mode=tui target=
+    while (($#)); do
+        case $1 in
+            -h | --help) sc_usage; return 0 ;;
+            -V | --version) printf 'servercat %s\n' "$SC_VERSION"; return 0 ;;
+            -l | --list) mode=list ;;
+            -c | --check)
+                [[ -n ${2:-} ]] || sc_die "--check needs a server name"
+                mode=check target=$2
+                shift
+                ;;
+            --config-dir)
+                [[ -n ${2:-} ]] || sc_die "--config-dir needs a directory"
+                SC_CONFIG_DIR=$2
+                shift
+                ;;
+            *) sc_die "unknown option '$1' (see --help)" ;;
+        esac
+        shift
+    done
+    sc_check_deps || return 1
+    sc_config_init || sc_die "$SC_ERR"
+    sc_config_load_all
+    sc_glyphs_init
+    case $mode in
+        list) sc_print_warnings; sc_cli_list ;;
+        check) sc_print_warnings; sc_cli_check "$target" ;;
+        *) sc_tui_main ;;
+    esac
+}
+
+sc_main "$@"

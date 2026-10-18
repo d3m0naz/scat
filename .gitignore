@@ -1,0 +1,13 @@
+# Secrets / local config
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+.env
+.env.*
+servers.conf
+
+# OS / editor
+.DS_Store
+*.swp
+*~

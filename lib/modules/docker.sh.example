@@ -1,0 +1,22 @@
+# shellcheck shell=bash
+# Skeleton for the planned Docker module - NOT implemented yet.
+# Rename to docker.sh to load it; it then appears under 'm' in the server
+# detail view. Keep every function in the mod_docker_ namespace.
+
+mod_docker_view() {
+    local name=$1 out=$SC_RUNTIME_DIR/docker.out err=$SC_RUNTIME_DIR/docker.err
+    local script=$SC_RUNTIME_DIR/docker.sh
+
+    # Example of the intended data path: a remote script through the shared
+    # ssh layer, output parsed and shown with the ui helpers.
+    printf '%s\n' "docker ps --format '{{.ID}}|{{.Names}}|{{.Status}}' 2>&1" >"$script"
+    sc_ui_flash "Querying containers on $name${SC_G_ELL}"
+    sc_ssh_run_script "$name" "${SC_SET[command_timeout]}" "$script" "$out" "$err"
+
+    mapfile -t SC_PAGER_LINES <"$out"
+    SC_PAGER_LINES=("Docker support is planned; this is only a skeleton." "" "${SC_PAGER_LINES[@]}")
+    sc_view_pager "Docker $SC_G_SEP $name"
+    rm -f -- "$out" "$err" "$script"
+}
+
+sc_module_register docker "Docker containers (skeleton)" mod_docker_view

@@ -1,0 +1,72 @@
+#!/usr/bin/expect -f
+# Drives the TUI in a pseudo-terminal: add a server through the form, open
+# the detail view (unreachable TEST-NET host), help, quit; then check that
+# the terminal settings were restored. Usage: tests/tui_smoke.exp <config-dir>
+
+set timeout 15
+set cfg [lindex $argv 0]
+set root [file dirname [file dirname [file normalize [info script]]]]
+set stty_file "$cfg.stty"
+set t0 [clock milliseconds]
+log_user 0
+
+proc fail {msg} { puts "FAIL: $msg"; exit 1 }
+
+# Waits for a regex on screen; prints the step with elapsed time.
+proc want {pattern step} {
+    global t0
+    expect {
+        -re $pattern { puts [format "  ok    %-38s %6d ms" $step [expr {[clock milliseconds] - $t0}]] }
+        timeout { fail "$step (no '$pattern' on screen)" }
+        eof { fail "$step (program exited)" }
+    }
+}
+
+set env(TERM) xterm-256color
+set stty_init "rows 30 columns 100"
+spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/servercat' --config-dir '$cfg'; echo EXIT=\$?; stty -g > '$stty_file.after'"
+
+want "No servers yet" "empty server list shown"
+send "a"
+want "Add server" "add form opened"
+send "\r"
+send "web1\r"
+want "Host alias from" "name accepted, moved to Host"
+send "\r"
+send "192.0.2.1\r"
+want "Default: 22" "host accepted, moved to Port"
+send "s"
+want "Saved 'web1'" "server saved"
+want "connection timed out" "unreachable host reported in list"
+send "\r"
+want "Monitoring uses BatchMode" "detail view opened"
+want "Press .s. to connect" "detail shows error and hints"
+send "\033?"
+want "keyboard reference" "Esc back + help (typeahead kept)"
+send "q"
+want "TARGET" "help closed, back on list"
+send "q"
+want "EXIT=0" "quit with status 0"
+expect eof
+
+if {![file exists "$stty_file.after"]} { fail "shell did not finish" }
+set f [open "$stty_file.before"]; set before [string trim [read $f]]; close $f
+set f [open "$stty_file.after"]; set after [string trim [read $f]]; close $f
+# PENDIN (0x20000000) is set by the macOS tty driver itself whenever ICANON
+# is switched back on, and cleared on the next read; ignore it.
+proc mask_pendin {s} {
+    if {[regexp {lflag=([0-9a-f]+)} $s -> hex]} {
+        scan $hex %x n
+        set v [format %x [expr {$n & ~0x20000000}]]
+        regsub {lflag=[0-9a-f]+} $s "lflag=$v" s
+    }
+    return $s
+}
+if {[mask_pendin $before] ne [mask_pendin $after]} {
+    fail "terminal settings not restored:\n  before $before\n  after  $after"
+}
+puts "  ok    terminal settings restored"
+set f [open "$cfg/servers.conf"]; set conf [read $f]; close $f
+if {![string match "*\\\[web1\\\]*host = 192.0.2.1*" $conf]} { fail "servers.conf missing web1" }
+puts "  ok    servers.conf contains web1"
+puts "PASS: TUI smoke test"
