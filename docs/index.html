@@ -163,6 +163,7 @@
   <div>
     <h1 id="top">scat</h1>
     <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
+    <p class="tag">scat 0.2.0 · released <time datetime="2026-10-18">2026-10-18</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.0">release notes</a></p>
     <p class="tag"><span class="blink">_</span></p>
   </div>
 </section>
@@ -200,7 +201,7 @@
 <pre><span class="p">$ </span><span id="install-cmd">curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash</span></pre>
 <button class="toggle copy-btn" type="button" data-copy="install-cmd" aria-label="Copy install command" hidden>[ copy ]</button>
 <span class="sr-only" id="copy-status" aria-live="polite"></span>
-<p>The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see the next section. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+<p>This installs scat 0.2.0 (released <time datetime="2026-10-18">2026-10-18</time>). The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see the next section. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
 
 <h2>bash 5 or newer</h2>
 <p>scat is a Bash script that runs on the machine you work on. It is written for any system with Bash 5 or newer and the usual Unix tools. So far it has been run on macOS (Apple Silicon); Linux and FreeBSD as the machine running scat have not been tested yet. Check your version with <code>bash --version</code>.</p>
