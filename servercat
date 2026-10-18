@@ -44,7 +44,7 @@ Options:
   -l, --list            print configured servers and exit
   -c, --check NAME      collect metrics for one server, print a summary;
                         exit status 0 if it is reachable
-      --config-dir DIR  use DIR instead of ${SC_CONFIG_DIR/#$HOME/\~}
+      --config-dir DIR  use DIR instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}
   -V, --version         print version
   -h, --help            show this help
 

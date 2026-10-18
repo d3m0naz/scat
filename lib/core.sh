@@ -15,6 +15,10 @@ sc_warn() {
     printf 'servercat: warning: %s\n' "$*" >&2
 }
 
+sc_error() {
+    printf 'servercat: error: %s\n' "$*" >&2
+}
+
 # Homebrew formula that provides a command, for install hints.
 declare -gA SC_BREW_FORMULA=(
     [ssh]=openssh [tput]=ncurses [stty]=coreutils [awk]=gawk [sed]=gnu-sed

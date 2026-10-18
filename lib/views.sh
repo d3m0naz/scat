@@ -316,15 +316,16 @@ sc_proc_header() {
     REPLY="${out}COMMAND"
 }
 
+# Formats one process row to width $2 (default: screen width minus indent).
 sc_proc_line() {
-    local pid user cpu mem rss cmd out
+    local pid user cpu mem rss cmd out width=${2:-$((SC_COLS - 2))}
     IFS='|' read -r pid user cpu mem rss cmd <<<"$1"
     sc_fit_right "$pid" 7; out="$REPLY "
     sc_fit "$user" 10; out+="$REPLY "
     sc_fit_right "$cpu" 6; out+="$REPLY "
     sc_fit_right "$mem" 6; out+="$REPLY "
     sc_fmt_kib "$rss"; sc_fit_right "$REPLY" 7; out+="$REPLY "
-    sc_fit "$cmd" $((SC_COLS - 2 - ${#out}))
+    sc_fit "$cmd" $((width - ${#out}))
     REPLY=$out$REPLY
 }
 

@@ -259,6 +259,28 @@ sc_metrics_load web2 "$TMP/res"
 refute "offline after error" sc_metrics_online web2
 eq "old metrics cleared" "" "${SC_M[web2|cpu_busy]-}"
 
+section "cli output"
+cat >"$TMP/res2" <<'EOF'
+rc=0
+ts=1700000000
+os=Linux
+mem_total=8200000
+mem_used=4450000
+proc=766271|root|3.3|0.1|11872|sshd-session: pi [priv]
+proc=935|root|2.8|1.4|121088|dockerd
+EOF
+SC_SRV[web2|host]=203.0.113.11
+sc_metrics_load web2 "$TMP/res2"
+out=$(sc_print_summary web2)
+eq "memory used / total" "  Memory    4.2G / 7.8G (54%)" "$(grep Memory <<<"$out")"
+eq "process header aligned" "        PID USER         CPU%   MEM%     RSS COMMAND" "$(grep -m1 'PID' <<<"$out")"
+eq "process row aligned" "     766271 root          3.3    0.1   11.5M sshd-session: pi [priv]" "$(grep -m1 766271 <<<"$out")"
+sc_proc_line "1|u|0.0|0.0|1|$(printf 'x%.0s' {1..100})" 60
+eq "process row width honoured" 60 "${#REPLY}"
+eq "unknown server is an error" "servercat: error: unknown server 'nope' (see --list)" "$(sc_cli_check nope 2>&1)"
+sc_cli_check nope 2>/dev/null; eq "unknown server exit 2" 2 "$?"
+eq "help names the default config dir" 1 "$("$SC_ROOT/servercat" --config-dir "$TMP/other" --help | grep -c "instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}\$")"
+
 section "formatting"
 sc_fmt_duration 93784; eq "duration days" "1d 2h" "$REPLY"
 sc_fmt_duration 3700; eq "duration hours" "1h 1m" "$REPLY"

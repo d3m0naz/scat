@@ -3,7 +3,8 @@
 # snippets and settings. Files are parsed without eval and rewritten
 # atomically with mode 600 (directory 700).
 
-SC_CONFIG_DIR=${SC_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/servercat}
+SC_CONFIG_DIR_DEFAULT=${SC_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/servercat}
+SC_CONFIG_DIR=$SC_CONFIG_DIR_DEFAULT
 SC_SERVER_FIELDS=(host port user identity jump group)
 
 declare -ga SC_SERVERS=() SC_SNIPPETS=() SC_CONFIG_WARNINGS=()

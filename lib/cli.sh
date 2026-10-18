@@ -28,7 +28,7 @@ sc_cli_list() {
 }
 
 sc_print_summary() {
-    local name=$1 d mnt size used pct n=0 p
+    local name=$1 d mnt size used total pct n=0 p
     sc_server_target "$name"
     if ! sc_metrics_online "$name"; then
         printf '%s (%s): OFFLINE - %s\n' "$name" "$REPLY" "${SC_M[$name|err]:-unknown error}"
@@ -42,9 +42,9 @@ sc_print_summary() {
     printf '  %-9s %s (%s cores)\n' Load "${SC_M[$name|load]:--}" "${SC_M[$name|cores]:-?}"
     printf '  %-9s %s%%\n' CPU "${SC_M[$name|cpu_busy]:--}"
     sc_fmt_kib "${SC_M[$name|mem_used]-}"; used=$REPLY
-    sc_fmt_kib "${SC_M[$name|mem_total]-}"
+    sc_fmt_kib "${SC_M[$name|mem_total]-}"; total=$REPLY
     sc_pct "${SC_M[$name|mem_used]-}" "${SC_M[$name|mem_total]-}" && pct=$REPLY || pct=-
-    printf '  %-9s %s / %s (%s%%)\n' Memory "$used" "$REPLY" "$pct"
+    printf '  %-9s %s / %s (%s%%)\n' Memory "$used" "$total" "$pct"
     if [[ -n ${SC_M[$name|net_rx]-} ]]; then
         sc_fmt_bytes "${SC_M[$name|net_rx]}"; d=$REPLY
         sc_fmt_bytes "${SC_M[$name|net_tx]}"
@@ -57,15 +57,19 @@ sc_print_summary() {
         printf '  %-9s %s / %s (%s%%) %s\n' Disk "$d" "$REPLY" "$pct" "$mnt"
     done <<<"${SC_M[$name|disks]}"
     printf '  Top processes (%s total):\n' "${SC_M[$name|proc_count]:-?}"
+    sc_proc_header
+    printf '    %s\n' "$REPLY"
     while IFS= read -r p && ((n++ < 5)); do
-        [[ -n $p ]] && printf '    %s\n' "${p//|/  }"
+        [[ -n $p ]] || continue
+        sc_proc_line "$p" 76
+        printf '    %s\n' "${REPLY%"${REPLY##*[! ]}"}"
     done <<<"${SC_M[$name|procs]}"
 }
 
 sc_cli_check() {
     local name=$1
     if ! sc_server_exists "$name"; then
-        sc_warn "unknown server '$name' (see --list)"
+        sc_error "unknown server '$name' (see --list)"
         return 2
     fi
     sc_runtime_init || sc_die "cannot create runtime directory"
