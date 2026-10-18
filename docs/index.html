@@ -83,6 +83,7 @@
   :root[data-theme="dark"] .logo .logo-dark { display: block; }
   h1 { margin: 0; font-size: 32px; letter-spacing: 0.04em; color: var(--accent); }
   .tag { margin: 6px 0 0; color: var(--dim); }
+  .hero .tag { font-size: 14px; }
 
   h2 {
     font-size: 18px; margin: 40px 0 12px; color: var(--hot);
@@ -116,9 +117,6 @@
 
   .screen { overflow-x: auto; }
   .screen pre { margin: 0; border-color: var(--fg); }
-  .blink { animation: blink 1.1s steps(2, start) infinite; }
-  @keyframes blink { to { visibility: hidden; } }
-  @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
 
   /* Animated demo (demo.js): an 80x24 terminal. The font shrinks with the
      viewport so all 80 columns fit without horizontal scrolling. */
@@ -174,7 +172,6 @@
     <h1 id="top" class="sr-only">scat</h1>
     <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
     <p class="tag">scat 0.2.1 · released <time datetime="2026-10-18">2026-10-18</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.1">release notes</a></p>
-    <p class="tag"><span class="blink">_</span></p>
   </div>
 </section>
 
