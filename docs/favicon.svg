@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- The hero paw of index.html as favicon. A favicon can't read the
+       page's CSS variables. #178cb3 is a lighter variant of the page accent
+       (#0a6a8a) with at least 3:1 contrast on light and dark tab bars, for
+       browsers that ignore prefers-color-scheme in SVG images (WebKit);
+       browsers that honour it get the dark-mode accent #55ffff. -->
+  <style>
+    g { fill: #178cb3; }
+    @media (prefers-color-scheme: dark) { g { fill: #55ffff; } }
+  </style>
+  <g>
+    <ellipse cx="60" cy="78" rx="30" ry="26"/>
+    <ellipse cx="26" cy="46" rx="11" ry="14" transform="rotate(-18 26 46)"/>
+    <ellipse cx="44" cy="26" rx="11" ry="15" transform="rotate(-6 44 26)"/>
+    <ellipse cx="76" cy="26" rx="11" ry="15" transform="rotate(6 76 26)"/>
+    <ellipse cx="94" cy="46" rx="11" ry="14" transform="rotate(18 94 46)"/>
+  </g>
+</svg>
