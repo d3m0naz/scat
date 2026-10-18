@@ -112,7 +112,7 @@
 
   /* Animated demo (demo.js): an 80x24 terminal. The font shrinks with the
      viewport so all 80 columns fit without horizontal scrolling. */
-  .demo { overflow: hidden; }
+  .demo { overflow: visible; }
   .demo pre {
     overflow: hidden; white-space: pre; padding: 12px 14px;
     width: fit-content; max-width: 100%;
@@ -128,6 +128,7 @@
   .demo .sel { background: var(--accent); color: var(--bg); }
   .demo .flash, .demo .key-down { background: var(--warn); color: var(--bg); font-weight: bold; }
   .caption { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+  .demo-toggle { margin-top: 8px; }
 
   footer { margin-top: 56px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 14px; }
   footer a { color: var(--dim); }
@@ -186,6 +187,7 @@
                                                                                 
                                                                                 
 <span class="inv"> </span><span class="inv b">↑↓</span><span class="inv"> move </span><span class="inv"> </span><span class="inv b">⏎</span><span class="inv"> details </span><span class="inv"> </span><span class="inv b">a</span><span class="inv"> add </span><span class="inv"> </span><span class="inv b">e</span><span class="inv"> edit </span><span class="inv"> </span><span class="inv b">d</span><span class="inv"> delete </span><span class="inv"> </span><span class="inv b">s</span><span class="inv"> ssh </span><span class="inv"> </span><span class="inv b">r</span><span class="inv"> refresh </span><span class="inv"> </span><span class="inv b">?</span><span class="inv"> help </span><span class="inv"> </span><span class="inv b">q</span><span class="inv"> quit </span><span class="inv"> </span></pre>
+<button class="toggle demo-toggle" id="demo-toggle" type="button" hidden>[ ▶ play ]</button>
 <p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
 

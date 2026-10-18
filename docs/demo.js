@@ -7,7 +7,8 @@
  * Frames are 80x24 like the real minimum terminal. ScatDemo.frame() builds
  * one frame as HTML from a plain state object and has no DOM access, so it
  * can be checked outside a browser. With prefers-reduced-motion the server
- * list is shown as a still frame and nothing moves. */
+ * list is shown as a still frame and nothing moves until the play button is
+ * pressed. The button pauses and continues the animation. */
 (function (global) {
   "use strict";
 
@@ -255,7 +256,11 @@
   var clock0 = 12 * 3600 + 3 * 60 + 55;
   var picks = [4, 0, 2, 5];               // web-02, lab-ci, db-01, backup-01
   var reduce = global.matchMedia ? global.matchMedia("(prefers-reduced-motion: reduce)") : null;
-  var timer = null, start = 0, st = null;
+  var btn = document.getElementById("demo-toggle");
+  // running: timers active. userPaused: paused with the button (survives tab
+  // switches). hiddenHalt: halted only because the tab was hidden.
+  var timer = null, ival = null, start = 0, st = null, seq = null;
+  var running = false, userPaused = false, hiddenHalt = false, dueAt = 0, pausedAt = 0;
 
   function draw() { screen.innerHTML = frame(st); }
 
@@ -273,17 +278,22 @@
     return steps;
   }
 
-  function run() {
-    var n = 0, steps = round(picks[0]), i = 0;
-    function next() {
-      steps[i][1]();
-      draw();
-      var wait = steps[i][0];
-      i++;
-      if (i >= steps.length) { n = (n + 1) % picks.length; steps = round(picks[n]); i = 0; }
-      timer = setTimeout(next, wait);
+  function schedule(wait) {
+    dueAt = Date.now() + wait;
+    timer = setTimeout(next, wait);
+  }
+
+  function next() {
+    var step = seq.steps[seq.i];
+    step[1]();
+    draw();
+    seq.i++;
+    if (seq.i >= seq.steps.length) {
+      seq.n = (seq.n + 1) % picks.length;
+      seq.steps = round(picks[seq.n]);
+      seq.i = 0;
     }
-    next();
+    schedule(step[0]);
   }
 
   // Values follow the clock; a freshly opened detail view fills up first.
@@ -295,37 +305,86 @@
     draw();
   }
 
-  function stop() {
+  function showButton() {
+    if (!btn) return;
+    btn.hidden = false;
+    btn.textContent = running ? "[ ❚❚ pause ]" : "[ ▶ play ]";
+    btn.setAttribute("aria-label", running ? "Pause demo" : "Play demo");
+  }
+
+  // Stops the timers and keeps the current frame.
+  function halt() {
+    if (!running) return;
+    running = false;
+    pausedAt = Date.now();
     clearTimeout(timer);
-    clearInterval(st && st.ival);
-    timer = null;
+    clearInterval(ival);
+    showButton();
   }
 
-  function still() {
-    stop();
-    st = { view: "list", sel: 4, t: clock0, live: liveAt(0, 1), pressed: "" };
-    draw();
+  // Continues where halt() stopped; the clock skips the paused time.
+  function resume() {
+    if (running || !seq) return;
+    var gap = Date.now() - pausedAt;
+    start += gap;
+    if (st.opened) st.opened += gap;
+    running = true;
+    ival = setInterval(tick, 150);
+    schedule(Math.max(0, dueAt - pausedAt));
+    showButton();
   }
 
+  // Starts from the beginning of the first round.
   function play() {
-    stop();
+    halt();
     start = Date.now();
     st = { view: "list", sel: 0, t: clock0, live: liveAt(0, 1), pressed: "", opened: 0 };
-    st.ival = setInterval(tick, 150);
-    run();
+    seq = { n: 0, i: 0, steps: round(picks[0]) };
+    running = true;
+    ival = setInterval(tick, 150);
+    next();
+    showButton();
+  }
+
+  // Reduced motion: the server list as a still frame; the button can start it.
+  function still() {
+    halt();
+    seq = null;
+    st = { view: "list", sel: 4, t: clock0, live: liveAt(0, 1), pressed: "" };
+    draw();
+    showButton();
   }
 
   function decide() {
-    if (reduce && reduce.matches) still(); else play();
+    if (reduce && reduce.matches) still();
+    else if (!userPaused) play();
   }
 
-  // Pause while the tab is hidden; follow changes of the motion setting.
+  if (btn) {
+    btn.addEventListener("click", function () {
+      if (running) {
+        userPaused = true;
+        halt();
+      } else {
+        userPaused = false;
+        if (seq) resume(); else play();
+      }
+    });
+  }
+
+  // Halt while the tab is hidden and continue afterwards, unless the user
+  // paused; follow changes of the motion setting.
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) stop(); else decide();
+    if (document.hidden) {
+      if (running) { hiddenHalt = true; halt(); }
+    } else if (hiddenHalt) {
+      hiddenHalt = false;
+      if (!userPaused) resume();
+    }
   });
   if (reduce) {
-    if (reduce.addEventListener) reduce.addEventListener("change", decide);
-    else if (reduce.addListener) reduce.addListener(decide);
+    if (reduce.addEventListener) reduce.addEventListener("change", function () { userPaused = false; decide(); });
+    else if (reduce.addListener) reduce.addListener(function () { userPaused = false; decide(); });
   }
   decide();
 })(this);
