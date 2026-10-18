@@ -9,8 +9,8 @@
 
 set -euo pipefail
 
-VERSION=0.2.0
-SHA256=f4b67ffde9e914309f7a35d3385641146abdb3e79ed36a5e3902a5534e84d684
+VERSION=0.2.1
+SHA256=4ddd8cf5a615f8c21873a86ad61806c65409cfc19176589a1fbb6fbdeb20f669
 URL=https://github.com/d3m0naz/scat/releases/download/v$VERSION/scat-$VERSION.tar.gz
 
 PREFIX=${SCAT_PREFIX:-$HOME/.local}
