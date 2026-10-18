@@ -188,7 +188,7 @@ sc_frame_text() {
 # Starts a frame with the header; returns 1 (after drawing a notice) when
 # the terminal is too small for the views.
 sc_ui_begin_frame() {
-    local left=" ServerCat $SC_G_SEP $1" right=" $2  " i
+    local left=" scat $SC_G_SEP $1" right=" $2  " i
     SC_FRAME=()
     if ((SC_ROWS < SC_MIN_ROWS || SC_COLS < SC_MIN_COLS)); then
         for ((i = 0; i < SC_ROWS; i++)); do SC_FRAME+=(""); done

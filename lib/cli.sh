@@ -3,6 +3,7 @@
 
 sc_print_warnings() {
     local w
+    [[ -n ${SC_CONFIG_NOTE-} ]] && printf 'scat: %s\n' "$SC_CONFIG_NOTE" >&2
     for w in "${SC_CONFIG_WARNINGS[@]}"; do sc_warn "$w"; done
 }
 

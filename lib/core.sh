@@ -7,16 +7,16 @@ SC_VERSION="0.1.0"
 SC_ERR=
 
 sc_die() {
-    printf 'servercat: %s\n' "$*" >&2
+    printf 'scat: %s\n' "$*" >&2
     exit 1
 }
 
 sc_warn() {
-    printf 'servercat: warning: %s\n' "$*" >&2
+    printf 'scat: warning: %s\n' "$*" >&2
 }
 
 sc_error() {
-    printf 'servercat: error: %s\n' "$*" >&2
+    printf 'scat: error: %s\n' "$*" >&2
 }
 
 # Homebrew formula that provides a command, for install hints.
@@ -33,7 +33,7 @@ sc_check_deps() {
         formulas+=("${SC_BREW_FORMULA[$cmd]:-$cmd}")
     done
     ((${#missing[@]} == 0)) && return 0
-    printf 'servercat: missing required commands: %s\n' "${missing[*]}" >&2
+    printf 'scat: missing required commands: %s\n' "${missing[*]}" >&2
     printf 'They normally ship with macOS. To install them with Homebrew:\n  brew install %s\n' \
         "${formulas[*]}" >&2
     return 1

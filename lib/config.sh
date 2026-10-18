@@ -1,9 +1,32 @@
 # shellcheck shell=bash
-# Configuration: INI-style files under ~/.config/servercat for servers,
+# Configuration: INI-style files under ~/.config/scat for servers,
 # snippets and settings. Files are parsed without eval and rewritten
 # atomically with mode 600 (directory 700).
 
-SC_CONFIG_DIR_DEFAULT=${SC_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/servercat}
+# Default config directory: $SC_CONFIG_DIR if set, else $XDG_CONFIG_HOME/scat
+# (~/.config/scat). scat was called servercat before; when only the old
+# servercat directory exists, it stays in use and SC_CONFIG_LEGACY names it.
+sc_config_default_dir() {
+    local base=${XDG_CONFIG_HOME:-$HOME/.config}
+    SC_CONFIG_LEGACY=
+    if [[ -n ${SC_CONFIG_DIR:-} ]]; then
+        REPLY=$SC_CONFIG_DIR
+    elif [[ ! -d $base/scat && -d $base/servercat ]]; then
+        REPLY=$base/servercat SC_CONFIG_LEGACY=$base/servercat
+    else
+        REPLY=$base/scat
+    fi
+}
+
+# Notice for the user when the old directory is in use (status 1 if not).
+sc_config_legacy_note() {
+    [[ -n $SC_CONFIG_LEGACY && $SC_CONFIG_DIR == "$SC_CONFIG_LEGACY" ]] || return 1
+    REPLY="using the old config directory $SC_CONFIG_LEGACY; rename it to ${SC_CONFIG_LEGACY%/servercat}/scat"
+    REPLY=${REPLY//"$HOME"/\~}
+}
+
+sc_config_default_dir
+SC_CONFIG_DIR_DEFAULT=$REPLY
 SC_CONFIG_DIR=$SC_CONFIG_DIR_DEFAULT
 SC_SERVER_FIELDS=(host port user identity jump group)
 
@@ -157,7 +180,7 @@ _sc_server_key() {
 
 sc_config_emit_servers() {
     local name f
-    printf '# ServerCat servers. Rewritten by servercat; comments are not preserved.\n'
+    printf '# scat servers. Rewritten by scat; comments are not preserved.\n'
     printf '# Authentication uses SSH keys or ssh-agent only - never put passwords here.\n'
     printf '# Keys: host (required), port, user, identity, jump, group\n'
     for name in "${SC_SERVERS[@]}"; do
@@ -288,8 +311,8 @@ _sc_snippet_key() {
 
 sc_config_emit_snippets() {
     local name
-    printf '# ServerCat snippets: saved shell commands, run via `sh` on the remote host.\n'
-    printf '# Rewritten by servercat; comments are not preserved.\n'
+    printf '# scat snippets: saved shell commands, run via `sh` on the remote host.\n'
+    printf '# Rewritten by scat; comments are not preserved.\n'
     for name in "${SC_SNIPPETS[@]}"; do
         printf '\n[%s]\ncommand = %s\n' "$name" "${SC_SNIP[$name]}"
     done
@@ -333,7 +356,7 @@ sc_snippet_delete() {
 
 sc_config_emit_default_settings() {
     cat <<'EOF'
-# ServerCat settings. Remove the leading '#' to change a value.
+# scat settings. Remove the leading '#' to change a value.
 [settings]
 # Seconds between automatic refreshes of the server list (5-3600)
 # list_refresh = 15

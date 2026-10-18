@@ -1,12 +1,11 @@
-# ServerCat (terminal edition)
+# scat
 
-A Bash TUI for macOS that recreates the server part of the iOS app
-[ServerCat](https://servercat.app): keep a list of servers, watch their status
-and system metrics over SSH, look at processes, open a shell, and run saved
-commands. Docker and Kubernetes support are planned (see below).
+A Bash TUI for macOS to watch and manage servers over SSH: keep a list of
+servers, watch their status and system metrics, look at processes, open a
+shell, and run saved commands. Docker and Kubernetes support are planned (see below).
 
 ```
- ServerCat · Servers                                          2 servers · 12:03:55
+ scat · Servers                                               2 servers · 12:03:55
    NAME             TARGET                    CPU   MEM   LOAD   UPTIME STATUS
  ▶● web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h [prod] Ubuntu 24.04 LTS
   ● db1             db.internal via bastion     -     -      -        - authentication failed - …
@@ -22,8 +21,11 @@ brew install bash                      # installs /opt/homebrew/bin/bash (5.3)
 # make sure /opt/homebrew/bin comes first in PATH, e.g. in ~/.zshrc:
 export PATH="/opt/homebrew/bin:$PATH"
 
-# optional: put servercat on your PATH (symlinks are resolved)
-ln -s "$PWD/servercat" /opt/homebrew/bin/servercat
+# get scat (placeholder URL: the repository is still being renamed)
+git clone https://github.com/d3m0naz/scat.git && cd scat
+
+# optional: put scat on your PATH (symlinks are resolved)
+ln -s "$PWD/scat" /opt/homebrew/bin/scat
 ```
 
 The script starts with `#!/usr/bin/env bash` and refuses to run on Bash < 5,
@@ -40,16 +42,16 @@ network rates; the status page says so instead of showing numbers.
 ## Usage
 
 ```sh
-servercat                       # interactive TUI
-servercat --list                # print configured servers
-servercat --check web1          # one-shot metrics summary; exit 0 if reachable
-servercat --config-dir DIR      # use another config directory
-servercat --help | --version
+scat                    # interactive TUI
+scat --list             # print configured servers
+scat --check web1       # one-shot metrics summary; exit 0 if reachable
+scat --config-dir DIR   # use another config directory
+scat --help | --version
 ```
 
 ### Authentication: keys only, no passwords
 
-ServerCat never asks for or stores passwords. Monitoring connections use
+scat never asks for or stores passwords. Monitoring connections use
 `ssh -o BatchMode=yes`, so they can only authenticate with SSH keys, keys in
 `ssh-agent`, or whatever your `~/.ssh/config` provides. Load your key once
 (`ssh-add --apple-use-keychain ~/.ssh/id_ed25519`) or set an *Identity file*
@@ -83,7 +85,16 @@ and only the changed rows are rewritten.
 
 ## Configuration
 
-Everything lives in `~/.config/servercat/` (or `$XDG_CONFIG_HOME/servercat`).
+Everything lives in `~/.config/scat/` (or `$XDG_CONFIG_HOME/scat`); the
+environment variable `SC_CONFIG_DIR` or `--config-dir DIR` selects another
+directory.
+
+**Migration:** older versions were called servercat and used
+`~/.config/servercat/`. If only that directory exists, scat keeps using it
+and prints a short notice (on stderr, or in the TUI status line); rename
+the directory to `~/.config/scat` to switch. If both exist, the new one is
+used.
+
 The directory is created with mode `700`, files with `600`. Files are parsed
 as data (never `eval`ed or sourced). Invalid entries are skipped with a
 warning shown in the status line or on stderr. The app rewrites a file
@@ -220,7 +231,7 @@ Interfaces that are physical but down are still listed (with 0.00 MB/s).
 
 ## Features: implemented vs. planned
 
-| ServerCat feature | Status |
+| Feature | Status |
 |---|---|
 | Server list with add / edit / delete / reorder, persisted | ✅ |
 | Live status per server (online, CPU %, memory %, load, uptime, OS) | ✅ |
@@ -249,7 +260,7 @@ contract.
 ## Layout
 
 ```
-servercat               entry point: version check, option parsing, startup
+scat                    entry point: version check, option parsing, startup
 lib/core.sh             helpers: validation, formatting, timeout runner
 lib/config.sh           INI parsing, servers/snippets/settings persistence
 lib/ssh.sh              ssh argv construction, async metric collection, errors
@@ -278,7 +289,7 @@ tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
   control characters stripped before display, so a host can't inject
   terminal escape sequences.
 - **Connection reuse:** `ControlMaster=auto` with sockets in a private
-  `/tmp/servercat.<uid>.<pid>.*` directory. It is removed on exit, and a later
+  `/tmp/scat.<uid>.<pid>.*` directory. It is removed on exit, and a later
   start also removes directories left by an instance that was killed.
 - **Terminal:** alternate screen, hidden cursor, `stty -echo -icanon`. Exit,
   Ctrl-C, SIGTERM, SIGHUP and Ctrl-Z (suspend/resume) all restore the

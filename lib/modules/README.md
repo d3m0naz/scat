@@ -1,4 +1,4 @@
-# ServerCat modules
+# scat modules
 
 Every `*.sh` file in this directory is sourced at startup (TUI mode only).
 Modules add screens to the server detail view (key `m`) without changing the

@@ -582,7 +582,7 @@ sc_view_pager() {
 
 sc_view_help() {
     mapfile -t SC_PAGER_LINES <<EOF
-ServerCat $SC_VERSION - keyboard reference
+scat $SC_VERSION - keyboard reference
 
 Everywhere
   Up/Down, j/k        move selection        PgUp/PgDn, g/G   page, top/bottom

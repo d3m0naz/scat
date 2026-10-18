@@ -1,4 +1,4 @@
-# ServerCat metrics collector. Sent to the remote host and run with `sh -s`,
+# scat metrics collector. Sent to the remote host and run with `sh -s`,
 # so it must stay POSIX sh and must not depend on the remote login shell.
 # Prints key=value lines; netif=, disk= and proc= lines repeat. Linux is
 # and FreeBSD (OPNsense) are fully supported, macOS on a best-effort basis.
@@ -200,7 +200,7 @@ print_procs() {
 }
 
 # Only collect when run as the script, not when sourced by the tests.
-[ -n "${SERVERCAT_METRICS_LIB-}" ] && return 0
+[ -n "${SCAT_METRICS_LIB-}" ] && return 0
 
 os=$(uname -s 2>/dev/null)
 echo "os=$os"

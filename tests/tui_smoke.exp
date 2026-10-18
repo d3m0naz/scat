@@ -24,7 +24,7 @@ proc want {pattern step} {
 
 set env(TERM) xterm-256color
 set stty_init "rows 30 columns 100"
-spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/servercat' --config-dir '$cfg'; echo EXIT=\$?; stty -g > '$stty_file.after'"
+spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/scat' --config-dir '$cfg'; echo EXIT=\$?; stty -g > '$stty_file.after'"
 
 want "No servers yet" "empty server list shown"
 send "a"

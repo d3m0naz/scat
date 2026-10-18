@@ -131,6 +131,35 @@ refute "nothing was executed" test -e /tmp/sc-pwned
 eq "warnings collected" 6 "${#SC_CONFIG_WARNINGS[@]}"
 printf '        %s\n' "${SC_CONFIG_WARNINGS[@]}"
 
+section "config directory (renamed from servercat, fallback to the old path)"
+H=$TMP/home
+scat_env() { # HOME-relative run without SC_CONFIG_DIR/XDG_CONFIG_HOME
+    env -u SC_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$H" "$BASH" "$SC_ROOT/scat" "$@"
+}
+mkdir -p "$H"
+out=$(scat_env --list 2>&1)
+assert "new install: ~/.config/scat is created" test -d "$H/.config/scat"
+refute "new install: no old directory created" test -e "$H/.config/servercat"
+eq "new install: no notice" "" "$(grep 'old config directory' <<<"$out")"
+rm -rf "$H/.config"
+mkdir -p "$H/.config/servercat"
+printf '[legacy1]\nhost = 192.0.2.7\n' >"$H/.config/servercat/servers.conf"
+chmod 600 "$H/.config/servercat/servers.conf"
+out=$(scat_env --list 2>"$TMP/legacy.err")
+eq "only old directory: its servers are used" 1 "$(grep -c '^legacy1 ' <<<"$out")"
+eq "only old directory: notice on stderr" "scat: using the old config directory ~/.config/servercat; rename it to ~/.config/scat" "$(cat "$TMP/legacy.err")"
+refute "only old directory: new directory not created" test -e "$H/.config/scat"
+eq "only old directory: --help names it" 1 "$(scat_env --help | grep -c 'instead of ~/.config/servercat$')"
+eq "explicit --config-dir on the old path: no notice" "" "$(scat_env --config-dir "$H/.config/servercat" --list 2>&1 >/dev/null)"
+eq "SC_CONFIG_DIR wins, no notice" "" "$(env -u XDG_CONFIG_HOME SC_CONFIG_DIR="$TMP/envdir" HOME="$H" "$BASH" "$SC_ROOT/scat" --list 2>&1 >/dev/null)"
+mkdir -p "$H/.config/scat"
+out=$(scat_env --list 2>&1)
+eq "both directories: the new one is used" 0 "$(grep -c 'legacy1\|old config directory' <<<"$out")"
+rm -rf "$H/.config/scat" "$H/xdg"
+mkdir -p "$H/xdg/servercat"
+eq "XDG_CONFIG_HOME: same fallback" 1 \
+    "$(env -u SC_CONFIG_DIR XDG_CONFIG_HOME="$H/xdg" HOME="$H" "$BASH" "$SC_ROOT/scat" --list 2>&1 >/dev/null | grep -c 'old config directory ~/xdg/servercat; rename it to ~/xdg/scat')"
+
 section "config: settings"
 cat >"$SC_SETTINGS_FILE" <<'EOF'
 [settings]
@@ -282,9 +311,9 @@ eq "process header aligned" "        PID USER         CPU%   MEM%     RSS COMMAN
 eq "process row aligned" "     766271 root          3.3    0.1   11.5M sshd-session: pi [priv]" "$(grep -m1 766271 <<<"$out")"
 sc_proc_line "1|u|0.0|0.0|1|$(printf 'x%.0s' {1..100})" 60
 eq "process row width honoured" 60 "${#REPLY}"
-eq "unknown server is an error" "servercat: error: unknown server 'nope' (see --list)" "$(sc_cli_check nope 2>&1)"
+eq "unknown server is an error" "scat: error: unknown server 'nope' (see --list)" "$(sc_cli_check nope 2>&1)"
 sc_cli_check nope 2>/dev/null; eq "unknown server exit 2" 2 "$?"
-eq "help names the default config dir" 1 "$("$SC_ROOT/servercat" --config-dir "$TMP/other" --help | grep -c "instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}\$")"
+eq "help names the default config dir" 1 "$("$SC_ROOT/scat" --config-dir "$TMP/other" --help | grep -c "instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}\$")"
 
 section "section order (CPU, Disks, Network, processes)"
 # Renders into stdout instead of the terminal; prints the row of the first
@@ -448,7 +477,7 @@ EOF
 for i in lo eth0 wlan0 enp3s0 docker0 br-1a2b3c veth12ab tun0 wg0 virbr0 usb0; do mkdir -p "$TMP/sys/$i"; done
 for i in eth0 wlan0 enp3s0 usb0 veth12ab; do ln -s /dev/null "$TMP/sys/$i/device"; done
 collector() { # function-name args... (runs the POSIX sh functions with the test files)
-    SERVERCAT_METRICS_LIB=1 sh -c '. "$1"; NET_DEV=$2 SYS_NET=$3; shift 3; "$@"' sh \
+    SCAT_METRICS_LIB=1 sh -c '. "$1"; NET_DEV=$2 SYS_NET=$3; shift 3; "$@"' sh \
         "$SC_ROOT/lib/remote/metrics.sh" "$TMP/netdev" "$NET_SYS" "$@"
 }
 NET_SYS=$TMP/sys
@@ -569,7 +598,7 @@ eq "idle process left out, busiest first" $'proc=123|www|3.2|0.4|30000|php-cgi\n
 eq "idle process not listed" "" "$(grep '|idle$' <<<"$out")"
 
 fb() { # function args... (collector functions with the FreeBSD fakes)
-    SERVERCAT_METRICS_LIB=1 sh -c 'F=$1; shift; . "$F/fake.sh"; . "$1"; shift; "$@"' sh "$F" "$SC_ROOT/lib/remote/metrics.sh" "$@"
+    SCAT_METRICS_LIB=1 sh -c 'F=$1; shift; . "$F/fake.sh"; . "$1"; shift; "$@"' sh "$F" "$SC_ROOT/lib/remote/metrics.sh" "$@"
 }
 eq "physical interfaces" "vtnet0 em0 wlan0 " "$(fb bsd_phys_ifaces "vtnet0 em0 lo0 pflog0 pfsync0 enc0 bridge0 wg0 vlan01 ovpns1 ovpnc2 lagg0 tun0 tap1 gif0 gre0 vxlan0 epair0a igb0.10 igb1 wlan0")"
 eq "link counters from the header columns" $'vtnet0 50000000 20000000\nem0 1000 1000\nlo0 25600 25600\npflog0 0 456789' \

@@ -18,13 +18,13 @@ declare -gA SC_M=()         # "<name>|<metric>" -> value
 # remove directories left behind by an instance that was SIGKILLed.
 sc_runtime_init() {
     local d pid
-    for d in /tmp/servercat."$UID".*.*; do
+    for d in /tmp/scat."$UID".*.*; do
         [[ -d $d && -O $d ]] || continue
-        pid=${d#/tmp/servercat."$UID".}
+        pid=${d#/tmp/scat."$UID".}
         pid=${pid%%.*}
         [[ $pid =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null && rm -rf -- "$d"
     done
-    SC_RUNTIME_DIR=$(mktemp -d "/tmp/servercat.$UID.$$.XXXXXX") || return 1
+    SC_RUNTIME_DIR=$(mktemp -d "/tmp/scat.$UID.$$.XXXXXX") || return 1
     chmod 700 "$SC_RUNTIME_DIR"
 }
 
@@ -234,11 +234,11 @@ sc_ssh_interactive() {
     local name=$1 rc
     sc_ssh_build_for "$name" interactive || return 1
     sc_ui_leave
-    printf '\nConnecting to %s - exit the remote shell to return to ServerCat.\n\n' "$name"
+    printf '\nConnecting to %s - exit the remote shell to return to scat.\n\n' "$name"
     "${SC_SSH_CMD[@]}"
     rc=$?
     if ((rc != 0)); then
-        printf '\nssh exited with status %d. Press any key to return to ServerCat.' "$rc"
+        printf '\nssh exited with status %d. Press any key to return to scat.' "$rc"
         IFS= read -rsn1 -d '' _ </dev/tty
     fi
     sc_ui_enter
