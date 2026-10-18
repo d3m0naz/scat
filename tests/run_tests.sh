@@ -342,7 +342,8 @@ nl=$(net_rows <<<"$detail" | sed -n 2p)
 pre=${dl%%[█░]*}; dbar=${#pre}; rest=${dl:dbar}; bars=${rest%% *}
 pre=${nl%%[░▏█]*}; nbar=${#pre}; npre=${nl%%rx *}
 eq "detail: network bar and values in the Disks columns" "$dbar $((dbar + ${#bars} + 1))" "$nbar ${#npre}"
-detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=60; sc_draw_detail web2)
+# Edge case below the 80x24 minimum: the layout itself still fits 60 columns.
+detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_MIN_COLS=60 SC_MIN_ROWS=12 SC_ROWS=40 SC_COLS=60; sc_draw_detail web2)
 eq "detail at 60 columns: rows exactly 60 wide, no wrap" "60 60" "$(net_rows <<<"$detail" | while IFS= read -r l; do printf '%s ' "${#l}"; done | sed 's/ $//')"
 eq "detail at 60 columns: values complete" "rx   0.52  tx   0.01 MB/s" "$(net_rows <<<"$detail" | head -n 1 | grep -o 'rx .*')"
 eq "detail order at 60 columns" ordered "$(order_of <<<"$detail")"
@@ -410,6 +411,155 @@ eq "colors: NO_COLOR disables bar colors" "|" "$(TERM=xterm-256color NO_COLOR=1;
 
 eq "renderer clears a row before writing it (keeps the last column)" $'\e[1;1H\e[0m\e[Kabc\e[0m' \
     "$(SC_ROWS=1 SC_FULL_REDRAW=0 SC_SCREEN=() SC_FRAME=(abc); sc_ui_render)"
+
+section "server list groups"
+SC_G_HLINE='─' SC_G_TIMES='×' SC_G_SEL='▶' SC_G_DOT='●' SC_G_HOLLOW='○'
+# Renders a server list frame to stdout (colors removed, trailing blanks kept).
+list_frame() { # rows cols sel top
+    (
+        sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+        SC_ROWS=$1 SC_COLS=$2
+        sc_list_scroll "$3" "$4" $((SC_ROWS - 4))
+        sc_draw_servers "$3" "$REPLY"
+    ) | sed $'s/\e\\[[0-9;]*[mK]//g'
+}
+list_rows() { # "h:name s:name ..." of SC_LIST_*
+    local i out=
+    for i in "${!SC_LIST_KIND[@]}"; do out+="${SC_LIST_KIND[i]}:${SC_LIST_VAL[i]} "; done
+    printf '%s' "${out% }"
+}
+SC_SERVERS=() SC_SRV=() SC_M=()
+for s in web2:production zeta: alpha:Lab web1:production db: Beta:lab2; do
+    sc_server_upsert "" "${s%%:*}" 192.0.2.1 "" "" "" "" "${s#*:}" >/dev/null || nok "upsert $s"
+done
+sc_list_build
+eq "groups A-Z (case-insensitive), servers A-Z, ungrouped last" \
+    "h:Lab s:alpha h:lab2 s:Beta h:production s:web1 s:web2 h:ungrouped s:db s:zeta" "$(list_rows)"
+eq "--list: same order with plain headings" "NAME                 TARGET                                   GROUP
+-- Lab --
+alpha                192.0.2.1                                Lab
+-- lab2 --
+Beta                 192.0.2.1                                lab2
+-- production --
+web1                 192.0.2.1                                production
+web2                 192.0.2.1                                production
+-- ungrouped --
+db                   192.0.2.1
+zeta                 192.0.2.1" "$(sc_cli_list | sed 's/ *$//')"
+nav() { # row key -> new row
+    SC_KEY=$2
+    sc_list_nav "$1" && printf '%s' "$REPLY"
+}
+eq "down skips the heading" 3 "$(nav 1 DOWN)"
+eq "up skips the heading" 1 "$(nav 3 UP)"
+eq "up from the first server stays on it" 1 "$(nav 1 UP)"
+eq "home selects the first server, not the heading" 1 "$(SC_ROWS=24; nav 6 HOME)"
+eq "end selects the last server" 9 "$(SC_ROWS=24; nav 1 END)"
+eq "page up never lands on a heading" 1 "$(SC_ROWS=24; nav 9 PGUP)"
+sc_list_fix 0 1; eq "initial selection is the first server" 1 "$REPLY"
+sc_list_fix 7 1; eq "selection on a heading moves to the next server" 8 "$REPLY"
+eq "every selectable row is a server" "s s s s s s" \
+    "$(for r in 1 3 5 6 8 9; do SC_KEY=DOWN; sc_list_nav $r; printf '%s ' "${SC_LIST_KIND[REPLY]}"; done | sed 's/ $//')"
+frame=$(list_frame 24 80 1 0)
+eq "list: heading row in the frame" " ── Lab ──" "$(sed -n 3p <<<"$frame" | sed 's/ *$//')"
+eq "list: no [group] tag in server rows" 0 "$(grep -c '\[production\]' <<<"$frame")"
+eq "list at 80 columns: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$frame" | grep -c x)"
+# Small window: 5 list rows. With zeta (last row) selected the window
+# starts inside "production"; its heading is drawn in place of the first row.
+frame=$(SC_MIN_ROWS=9 SC_MIN_COLS=60; list_frame 9 80 9 0)
+eq "scrolled list starts with the group heading (sticky)" " ── production ──| ○ web2| ── ungrouped ──| ○ db|▶○ zeta" \
+    "$(sed -n 3,7p <<<"$frame" | awk '{ print substr($0, 1, 30) }' | sed 's/ *$//; s/^\(.. [a-z0-9]*\) .*/\1/' | paste -sd '|' -)"
+frame=$(SC_MIN_ROWS=9 SC_MIN_COLS=60; list_frame 9 80 3 4)
+eq "scrolling up to the first server of a group shows its heading above it" " ── lab2 ──" "$(sed -n 3p <<<"$frame" | sed 's/ *$//')"
+frame=$(SC_MIN_ROWS=12 SC_MIN_COLS=60; list_frame 12 60 9 0)
+eq "edge case 60 columns: no row wider than 60" 0 "$(while IFS= read -r l; do ((${#l} > 60)) && echo x; done <<<"$frame" | grep -c x)"
+SC_SERVERS=() SC_SRV=()
+for s in c b a; do sc_server_upsert "" "$s" 192.0.2.1 "" "" "" "" "" >/dev/null; done
+sc_list_build
+eq "no groups: config order, no headings" "s:c s:b s:a" "$(list_rows)"
+eq "no groups: --list unchanged" "NAME TARGET GROUP|c 192.0.2.1|b 192.0.2.1|a 192.0.2.1" \
+    "$(sc_cli_list | awk '{ $1 = $1; print }' | paste -sd '|' -)"
+SC_SET[ascii]=1; sc_glyphs_init
+sc_list_heading prod; eq "ascii heading" " -- prod --" "$(sed $'s/\e\\[[0-9;]*m//g; s/ *$//' <<<"$REPLY")"
+SC_SET[ascii]=0 SC_G_FULL='█' SC_G_EMPTY='░' SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉') SC_G_HLINE='─' SC_G_TIMES='×' SC_G_SEL='▶'
+
+section "minimum terminal size 80x24"
+small=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=79; sc_draw_servers 0 0)
+eq "79x24: notice instead of the layout" 1 "$(grep -c 'Terminal too small: at least 80×24 needed (now 79×24)' <<<"$small")"
+eq "79x24: no list header" 0 "$(grep -c 'NAME' <<<"$small")"
+eq "notice is centred" "             Terminal too small: at least 80×24 needed (now 79×24)" "$(sed -n 12p <<<"$small" | sed $'s/\e\\[[0-9;]*m//g; s/ *$//')"
+small=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=23 SC_COLS=80; sc_draw_detail web2)
+eq "80x23: notice in the detail view too" 1 "$(grep -c 'now 80×23' <<<"$small")"
+sc_metrics_load web2 "$TMP/res.full"
+SC_SRV[web2|host]=203.0.113.11
+full=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=80; sc_draw_detail web2 | sed $'s/\e\\[[0-9;]*[mK]//g')
+eq "80x24: full detail layout" ordered "$(order_of <<<"$full")"
+eq "80x24: both disks, both interfaces, process rows" "2 2 2" \
+    "$(printf '%s %s %s' "$(grep -c '^  /\(data\)\{0,1\} ' <<<"$full")" "$(grep -c '^  \(eth0\|wlan0\) ' <<<"$full")" "$(grep -c '^ *[0-9]\+ \(root\|www-data\) ' <<<"$full")")"
+eq "80x24: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$full" | grep -c x)"
+
+section "detail view scrolling (80x24)"
+SC_G_SEP='·'
+{
+    printf 'rc=0\nts=1\nos=Linux\nhostname=bigbox\ncpu_busy=42\nmem_total=65000000\nmem_used=40000000\nswap_total=0\nload=1 1 1\n'
+    for i in 1 2 3 4 5 6; do printf 'disk=/data%d|1000000000|%d00000000|%d0\n' "$i" "$i" "$i"; done
+    for i in 0 1 2 3 4 5; do printf 'netif=eth%d|%d000000|%d00000\n' "$i" $((i * 15 + 1)) $((i + 1)); done
+    for i in {1..30}; do printf 'proc=%d|svc%d|%d.0|1.0|10000|worker-%02d\n' $((1000 + i)) "$i" $((31 - i)) "$i"; done
+} >"$TMP/big.res"
+sc_metrics_load big "$TMP/big.res"
+SC_SRV[big|host]=fixture-big.invalid
+# Draws the detail view at scroll position $1 in $2 x $3; prints the frame
+# without colors, then "pos max status" as the last line.
+det() { # scroll [cols] [rows]
+    (
+        sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+        SC_COLS=${2:-80} SC_ROWS=${3:-24} SC_DET_SCROLL=$1
+        sc_draw_detail big
+        printf '%s %s %s\n' "$SC_DET_SCROLL" "$SC_DET_SCROLL_MAX" "${SC_FRAME_STATUS:--}"
+    ) | sed $'s/\e\\[[0-9;]*[mK]//g'
+}
+f=$(det 0)
+eq "top: header and title row fixed, indicator 1-21/28" "0 7 1-21/28" "$(tail -n 1 <<<"$f")"
+eq "top: frame is 24 rows" 24 "$(sed '$d' <<<"$f" | wc -l | tr -d ' ')"
+eq "indicator at the right end of the status line" "1-21/28" "$(sed -n 23p <<<"$f" | sed 's/^ *//; s/ *$//')"
+eq "footer fits 80 columns" 1 "$(sed -n 24p <<<"$f" | awk '{ print (length($0) <= 80) }')"
+eq "scrolling up past the top is clamped" "0 7 1-21/28" "$(det -5 | tail -n 1)"
+eq "scrolling down past the end is clamped" "7 7 8-28/28" "$(det 100 | tail -n 1)"
+f=$(det 7)
+eq "header stays while scrolled" " scat · big" "$(sed -n 1p <<<"$f" | cut -c1-11)"
+eq "end: last process row is the last content row" 1 "$(sed -n 22p <<<"$f" | grep -c 'worker-03')"
+all=$(for p in 0 1 2 3 4 5 6 7; do det "$p" | sed -n '2,22p'; done | sort -u)
+eq "max size (6 disks, 6 interfaces): all reachable by scrolling" "6 6 1" \
+    "$(printf '%s %s %s' "$(grep -c '^  /data[1-6] ' <<<"$all")" "$(grep -c '^  eth[0-5] ' <<<"$all")" "$(grep -c 'PID USER' <<<"$all")")"
+key() { # start key -> position after the key (clamped by a redraw)
+    (
+        SC_ROWS=24 SC_COLS=80 SC_DET_SCROLL=$1 SC_KEY=$2
+        sc_ui_render() { :; }
+        sc_draw_detail big; sc_detail_scroll_key || echo unhandled; sc_draw_detail big
+        printf '%s' "$SC_DET_SCROLL"
+    )
+}
+eq "down: one row" 1 "$(key 0 DOWN)"
+eq "up: one row" 4 "$(key 5 UP)"
+eq "up at the top stays" 0 "$(key 0 UP)"
+eq "down at the end stays" 7 "$(key 7 DOWN)"
+eq "page down: one page (21 rows), clamped at the end" 7 "$(key 0 PGDN)"
+eq "page up: one page, clamped at the top" 0 "$(key 7 PGUP)"
+eq "end / home" "7 0" "$(key 2 END) $(key 5 HOME)"
+eq "other keys are not scroll keys" "unhandled" "$(key 0 p | head -c 9)"
+f=$(sc_ui_render() { :; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=0 SC_KEY=PGDN; sc_draw_detail big; sc_detail_scroll_key; sc_draw_detail big
+    SC_ROWS=40; sc_draw_detail big; printf '%s %s %s' "$SC_DET_SCROLL" "$SC_DET_SCROLL_MAX" "${SC_FRAME_STATUS:--}")
+eq "resize to 80x40: position clamped, no overflow, no indicator" "0 0 -" "$f"
+f=$(sc_ui_render() { :; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=7; sc_draw_detail big; SC_ROWS=27; sc_draw_detail big
+    printf '%s %s' "$SC_DET_SCROLL" "$SC_DET_SCROLL_MAX")
+eq "resize to 80x27: position clamped to the new end" "4 4" "$f"
+sc_metrics_load web2 "$TMP/res.full"
+f=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=0; sc_draw_detail web2; printf '%s\n' "${SC_FRAME_STATUS:--}")
+eq "no overflow (2 disks, 2 interfaces): no indicator" - "$(tail -n 1 <<<"$f")"
+eq "no overflow: status line empty" "" "$(sed -n 23p <<<"$f" | sed $'s/\e\\[[0-9;]*m//g; s/ *$//')"
+help=$(sc_view_pager() { printf '%s\n' "${SC_PAGER_LINES[@]}"; }; sc_view_help)
+eq "help lists the scroll keys" 2 "$(grep -c 'scroll one row\|top / bottom' <<<"$help")"
+eq "help lines fit 80 columns (79 + pager margin)" 0 "$(while IFS= read -r l; do ((${#l} > 79)) && echo x; done <<<"$help" | grep -c x)"
 
 section "formatting"
 sc_fmt_mbs 523000; eq "MB/s two decimals" "0.52 MB/s" "$REPLY"

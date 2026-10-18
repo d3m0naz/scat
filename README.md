@@ -7,7 +7,9 @@ shell, and run saved commands. Docker and Kubernetes support are planned (see be
 ```
  scat · Servers                                               2 servers · 12:03:55
    NAME             TARGET                    CPU   MEM   LOAD   UPTIME STATUS
- ▶● web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h [prod] Ubuntu 24.04 LTS
+ ── production ──
+ ▶● web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
+ ── ungrouped ──
   ● db1             db.internal via bastion     -     -      -        - authentication failed - …
 ```
 
@@ -60,6 +62,13 @@ scat --config-dir DIR   # use another config directory
 scat --help | --version
 ```
 
+The TUI needs a terminal of at least **80×24** (the macOS Terminal default).
+In a smaller window it draws no view, only a centered notice such as
+`Terminal too small: at least 80×24 needed (now 70×20)`. `q` still leaves
+the current view (and quits on the server list), Ctrl-C quits, and as soon
+as the window is large enough again the view returns. `--list` and
+`--check` have no size requirement.
+
 ### Authentication: keys only, no passwords
 
 scat never asks for or stores passwords. Monitoring connections use
@@ -83,7 +92,7 @@ be an alias defined there.
 |---|---|
 | Everywhere | `↑`/`↓` or `j`/`k` move · `PgUp`/`PgDn` · `g`/`G` top/bottom · `Enter` open · `Esc`/`q` back · `Ctrl-C` quit · `Ctrl-Z` suspend |
 | Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `?` help · `q`/`Esc` quit |
-| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules · `r` refresh |
+| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules · `r` refresh · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
 | Processes | `c`/`m`/`p`/`n` sort by CPU/memory/PID/name · `K` send SIGTERM (asks first) · `r` refresh |
 | Snippets | `Enter` run on the current server (asks first) · `a`/`e`/`d` add/edit/delete |
 | Forms | `Enter` edit field · `s` save · `t` test connection · `Esc` cancel |
@@ -130,7 +139,7 @@ group = production
 | `port`, `user` | optional, otherwise from `~/.ssh/config` / ssh defaults |
 | `identity` | optional private key file (never a password) |
 | `jump` | optional ProxyJump, `[user@]host[:port]`, comma-separated chains |
-| `group` | optional tag shown in the list |
+| `group` | optional group; the list shows servers under group headings |
 
 Section names (server names) are 1–32 characters: `A-Z a-z 0-9 . _ -`.
 
@@ -156,6 +165,29 @@ command = df -h
 
 Comments must be on their own lines (`#` or `;`). Text after `=` is taken
 literally.
+
+### Server list
+
+Without any `group` the list shows the servers in config order, and `J`/`K`
+move the selected server down/up (saved to `servers.conf`). As soon as one
+server has a group, the list is grouped:
+
+- a heading row per group, `── production ──` in the accent color (cyan,
+  bold; `-- production --` in ASCII mode);
+- groups sorted A–Z, ignoring case; servers A–Z within a group;
+- servers without a group last, under `── ungrouped ──`;
+- headings can't be selected: ↑↓, PgUp/PgDn, Home/End always land on a
+  server, and Enter, `e`, `d`, `s` act on that server;
+- when the list scrolls and a group's heading has moved out of view, it is
+  drawn in place of the first row, so the group of the visible servers is
+  always shown;
+- `J`/`K` show a notice instead of reordering, because the order follows the
+  names;
+- the group name is no longer repeated in each row; the detail view shows
+  it next to the target.
+
+`--list` uses the same order with plain `-- production --` heading lines and
+keeps the GROUP column. Without groups its output is unchanged.
 
 ### Status page
 
@@ -183,15 +215,15 @@ the CPU rates.
 The Network rows use the columns of the Disks rows: name, bar, and the
 values where the disks show percentage and size. The bar column is split:
 rx (left half), a one-cell gap, tx (right half). The unit appears once at
-the end. At 60 columns a row is exactly 60 characters wide:
+the end. At 80 columns (the minimum size):
 
 ```
   Disks
-  /           ██████████░░░░░░░░░░   52%  20.0G / 39.1G
+  /           ██████████████░░░░░░░░░░░░   52%  20.0G / 39.1G
 
   Network
-  eth0        ████▊░░░░ ▏░░░░░░░░░ rx  52.40  tx   0.01 MB/s
-  wlan0       ░░░░░░░░░ ░░░░░░░░░░ rx   0.00  tx   0.00 MB/s
+  eth0        ██████▎░░░░░ ▏░░░░░░░░░░░░ rx  52.40  tx   0.01 MB/s
+  wlan0       ░░░░░░░░░░░░ ░░░░░░░░░░░░░ rx   0.00  tx   0.00 MB/s
 ```
 
 - **Fixed scale:** each half has its own scale; 100 MB/s fills it. Faster rates (for example on
@@ -204,16 +236,23 @@ the end. At 60 columns a row is exactly 60 characters wide:
   contrast of at least 3:1 on common light and dark backgrounds (white,
   Solarized Light, black, #1e1e1e, One Dark). The empty part of a bar is
   dimmed. `NO_COLOR` turns colors off.
-- **Width:** the bar column is as wide as the Disks and CPU bars (20 cells at
-  60 columns: 9 rx + gap + 10 tx; 36 at 110: 17 + gap + 18). With an even
+- **Width:** the bar column is as wide as the Disks and CPU bars (26 cells at
+  80 columns: 12 rx + gap + 13 tx; 36 at 110: 17 + gap + 18). With an even
   width the tx half is one cell longer. `--check` prints one line per
   interface with a 10 + gap + 10 bar and no colors:
   `Network   eth0       ▏░░░░░░░░░ ▏░░░░░░░░░  rx   0.52  tx   0.01 MB/s`.
 - **Height:** the Network section needs 1 heading row plus 1 row per
-  interface (3 rows for two interfaces) and a blank separator. The detail
-  view does not scroll, so on short terminals the sections at the bottom are
-  cut off: with two disks and two interfaces the Network section is fully
-  visible from a terminal height of 18 rows.
+  interface (3 rows for two interfaces) and a blank separator. At 80×24 a
+  server with two disks and two interfaces fits completely, with 4 process
+  rows.
+- **Scrolling:** when the page is longer than the screen (up to 6 disks and
+  6 interfaces are shown), the content below the title row scrolls:
+  `↑`/`↓` one row, `PgUp`/`PgDn` one page, `Home`/`End` (`g`/`G`) top and
+  bottom. Title and footer stay in place. The status line shows the visible
+  rows at the right, e.g. `1-21/28`; without overflow there is no
+  indicator. After a resize or refresh the position is clamped to the new
+  content. Processes fill the rest of the screen, at least 3 rows (`p`
+  shows the full list).
 - **ASCII:** with `ascii = 1` (or a non-UTF-8 locale) bars use `#` and `.`
   like the other bars, in whole cells.
 
@@ -244,7 +283,7 @@ Interfaces that are physical but down are still listed (with 0.00 MB/s).
 
 | Feature | Status |
 |---|---|
-| Server list with add / edit / delete / reorder, persisted | ✅ |
+| Server list with add / edit / delete / reorder, group headings, persisted | ✅ |
 | Live status per server (online, CPU %, memory %, load, uptime, OS) | ✅ |
 | Detail view: CPU (user/sys/iowait), memory, swap, load, disks, rx/tx per physical network interface in MB/s, top processes | ✅ |
 | Process list with sorting and SIGTERM | ✅ |
@@ -304,8 +343,7 @@ tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
   start also removes directories left by an instance that was killed.
 - **Terminal:** alternate screen, hidden cursor, `stty -echo -icanon`. Exit,
   Ctrl-C, SIGTERM, SIGHUP and Ctrl-Z (suspend/resume) all restore the
-  terminal. A terminal smaller than 60×12 shows a notice instead of a broken
-  layout.
+  terminal. Below 80×24 a centered notice replaces the views (see Usage).
 
 ## Tests
 

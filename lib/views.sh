@@ -8,10 +8,113 @@ SC_FORM_ORIG= SC_FORM_RESULT= SC_FORM_ERRKEY=
 
 # --- server list --------------------------------------------------------------
 
+# Rows of the server list: SC_LIST_KIND[i] is "h" (group heading, not
+# selectable) or "s" (server), SC_LIST_VAL[i] the group or server name.
+# Without any group the rows are the servers in config order. With groups:
+# named groups A-Z, servers A-Z within a group, then "ungrouped".
+declare -ga SC_LIST_KIND=() SC_LIST_VAL=()
+SC_LIST_GROUPED=0
+
+sc_list_build() {
+    local name g last=$'\1' line
+    SC_LIST_KIND=() SC_LIST_VAL=() SC_LIST_GROUPED=0
+    for name in "${SC_SERVERS[@]}"; do
+        [[ -n ${SC_SRV[$name|group]} ]] && { SC_LIST_GROUPED=1; break; }
+    done
+    if ((!SC_LIST_GROUPED)); then
+        for name in "${SC_SERVERS[@]}"; do SC_LIST_KIND+=(s) SC_LIST_VAL+=("$name"); done
+        return 0
+    fi
+    # "0group<TAB>name" for named groups, "1<TAB>name" for the rest, so that
+    # ungrouped servers sort last. Names and groups contain no control chars.
+    while IFS=$'\t' read -r g name; do
+        if [[ $g != "$last" ]]; then
+            last=$g
+            SC_LIST_KIND+=(h)
+            if [[ $g == 1 ]]; then SC_LIST_VAL+=(ungrouped); else SC_LIST_VAL+=("${g#0}"); fi
+        fi
+        SC_LIST_KIND+=(s) SC_LIST_VAL+=("$name")
+    done < <(for name in "${SC_SERVERS[@]}"; do
+        g=${SC_SRV[$name|group]}
+        if [[ -n $g ]]; then line="0$g"; else line=1; fi
+        printf '%s\t%s\n' "$line" "$name"
+    done | LC_ALL=C sort -f -t $'\t' -k1,1 -k2,2)
+}
+
+# Row index of server $1 (REPLY=-1 and status 1 if not listed).
+sc_list_row() {
+    local i
+    for i in "${!SC_LIST_VAL[@]}"; do
+        [[ ${SC_LIST_KIND[i]} == s && ${SC_LIST_VAL[i]} == "$1" ]] && { REPLY=$i; return 0; }
+    done
+    REPLY=-1
+    return 1
+}
+
+# Moves a row index off headings: towards $2 (1 down, -1 up), and the other
+# way if there is no server in that direction. REPLY=row (-1: no servers).
+sc_list_fix() {
+    local r=$1 d=${2:-1} n=${#SC_LIST_KIND[@]}
+    ((r >= n)) && r=$((n - 1))
+    ((r < 0)) && r=0
+    while ((r >= 0 && r < n)) && [[ ${SC_LIST_KIND[r]} != s ]]; do ((r += d)); done
+    if ((r < 0 || r >= n)); then
+        r=$1 d=$((-d))
+        ((r >= n)) && r=$((n - 1))
+        ((r < 0)) && r=0
+        while ((r >= 0 && r < n)) && [[ ${SC_LIST_KIND[r]} != s ]]; do ((r += d)); done
+        ((r < 0 || r >= n)) && r=-1
+    fi
+    REPLY=$r
+}
+
+# Navigation keys over the list rows; headings are skipped. REPLY=new row.
+sc_list_nav() {
+    local sel=$1 d=1
+    case $SC_KEY in
+        UP | k | PGUP | HOME | g) d=-1 ;;
+    esac
+    sc_ui_nav "$sel" "${#SC_LIST_KIND[@]}" || return 1
+    case $SC_KEY in
+        HOME | g) d=1 ;;
+        END | G) d=-1 ;;
+    esac
+    sc_list_fix "$REPLY" "$d"
+    ((REPLY < 0)) && REPLY=$sel
+    return 0
+}
+
+# First visible row for selection $1 in a window of $3 rows, from the
+# previous top $2. With groups the first line always shows a group heading:
+# if the top row is a server, its heading is drawn in place of it ("sticky")
+# and SC_LIST_STICKY names the group. REPLY=top.
+sc_list_scroll() {
+    local sel=$1 top=$2 h=$3 n=${#SC_LIST_KIND[@]} i
+    SC_LIST_STICKY=
+    sc_ui_scroll "$sel" "$top" "$h" "$n"
+    top=$REPLY
+    # Keep the heading of the selected server's group in view when there is room.
+    if ((top == sel && sel > 0)) && [[ ${SC_LIST_KIND[sel - 1]} == h ]] && ((h > 1)); then
+        top=$((sel - 1))
+    fi
+    if ((SC_LIST_GROUPED && n > 0 && h > 1)) && [[ ${SC_LIST_KIND[top]} == s ]]; then
+        sc_ui_scroll "$sel" "$top" $((h - 1)) "$n"
+        top=$REPLY
+        if [[ ${SC_LIST_KIND[top]} == s ]]; then
+            for ((i = top; i >= 0; i--)); do
+                [[ ${SC_LIST_KIND[i]} == h ]] && { SC_LIST_STICKY=${SC_LIST_VAL[i]}; break; }
+            done
+        fi
+    fi
+    REPLY=$top
+}
+
 sc_view_servers() {
     local sel=0 top=0 dirty=1 last_fetch=0 n name
+    sc_list_build
+    sc_list_fix 0 1; sel=$REPLY
     while :; do
-        n=${#SC_SERVERS[@]}
+        n=${#SC_LIST_KIND[@]}
         ((sel >= n)) && sel=$((n - 1))
         ((sel < 0)) && sel=0
         sc_ui_check_resize && dirty=1
@@ -22,7 +125,7 @@ sc_view_servers() {
         fi
         sc_poll_results && dirty=1
         if ((dirty)); then
-            sc_ui_scroll "$sel" "$top" $((SC_ROWS - 4)) "$n"
+            sc_list_scroll "$sel" "$top" $((SC_ROWS - 4))
             top=$REPLY
             sc_draw_servers "$sel" "$top"
             dirty=0
@@ -30,33 +133,51 @@ sc_view_servers() {
         sc_read_key 0.5 || continue
         dirty=1
         SC_MSG=
-        if sc_ui_nav "$sel" "$n"; then
+        if sc_list_nav "$sel"; then
             sel=$REPLY
             continue
         fi
-        name=${SC_SERVERS[sel]-}
+        name=
+        [[ ${SC_LIST_KIND[sel]-} == s ]] && name=${SC_LIST_VAL[sel]}
         case $SC_KEY in
             ENTER | RIGHT | l) [[ -n $name ]] && sc_view_detail "$name" ;;
             a)
                 if sc_form_server ""; then
-                    sc_server_index "$SC_FORM_RESULT" && sel=$REPLY
+                    sc_list_build
+                    sc_list_row "$SC_FORM_RESULT" && sel=$REPLY
                     sc_fetch_async "$SC_FORM_RESULT"
                 fi
                 ;;
-            e) [[ -n $name ]] && sc_form_server "$name" && sc_fetch_async "$SC_FORM_RESULT" ;;
+            e)
+                if [[ -n $name ]] && sc_form_server "$name"; then
+                    sc_list_build
+                    sc_list_row "$SC_FORM_RESULT" && sel=$REPLY
+                    sc_fetch_async "$SC_FORM_RESULT"
+                fi
+                ;;
             d)
                 [[ -n $name ]] || continue
                 if sc_ui_confirm "Delete server '$name'?"; then
                     if sc_server_delete "$name"; then
                         sc_metrics_clear "$name"
                         sc_msg info "Deleted '$name'"
+                        sc_list_build
+                        sc_list_fix "$sel" 1; sel=$REPLY
                     else
                         sc_msg error "$SC_ERR"
                     fi
                 fi
                 ;;
-            J) [[ -n $name ]] && sc_server_move "$name" 1 && ((sel++)) ;;
-            K) [[ -n $name ]] && sc_server_move "$name" -1 && ((sel--)) ;;
+            J | K)
+                [[ -n $name ]] || continue
+                if ((SC_LIST_GROUPED)); then
+                    sc_msg info "Grouped lists are sorted by name; J/K reorders only without groups"
+                elif [[ $SC_KEY == J ]]; then
+                    sc_server_move "$name" 1 && { ((sel++)); sc_list_build; }
+                else
+                    sc_server_move "$name" -1 && { ((sel--)); sc_list_build; }
+                fi
+                ;;
             s) [[ -n $name ]] && { sc_ssh_interactive "$name" || sc_msg error "$SC_ERR"; } ;;
             r)
                 last_fetch=0
@@ -99,11 +220,16 @@ sc_server_cells() {
         CELL_UP=$REPLY
         CELL_INFO=${SC_M[$name|distro]:-${SC_M[$name|os]-}}
     fi
-    [[ -n ${SC_SRV[$name|group]} ]] && CELL_INFO="[${SC_SRV[$name|group]}] $CELL_INFO"
+}
+
+# One group heading row: "── production ──" in the accent color.
+sc_list_heading() {
+    sc_fit "$SC_G_HLINE$SC_G_HLINE $1 $SC_G_HLINE$SC_G_HLINE" $((SC_COLS - 1))
+    REPLY=" $C_BOLD$C_CYAN$REPLY$C_RESET"
 }
 
 sc_draw_servers() {
-    local sel=$1 top=$2 n=${#SC_SERVERS[@]} i name line style mark plural=s
+    local sel=$1 top=$2 n=${#SC_SERVERS[@]} rows=${#SC_LIST_KIND[@]} h=$((SC_ROWS - 4)) i name line style mark plural=s
     local nw=16 hw=0 cw=5 mw=5 lw=6 uw=8 fixed iw
     ((n == 1)) && plural=
     printf -v line '%(%H:%M:%S)T' -1
@@ -129,8 +255,18 @@ sc_draw_servers() {
         sc_frame_text "" "   No servers yet. Press 'a' to add one."
         sc_frame_text "$C_DIM" "   Authentication uses your SSH keys / ssh-agent; passwords are never stored."
     fi
-    for ((i = top; i < n && i < top + SC_ROWS - 4; i++)); do
-        name=${SC_SERVERS[i]}
+    if [[ -n ${SC_LIST_STICKY-} ]]; then
+        sc_list_heading "$SC_LIST_STICKY"
+        sc_frame_add "$REPLY"
+        ((h--))
+    fi
+    for ((i = top; i < rows && i < top + h; i++)); do
+        name=${SC_LIST_VAL[i]}
+        if [[ ${SC_LIST_KIND[i]} == h ]]; then
+            sc_list_heading "$name"
+            sc_frame_add "$REPLY"
+            continue
+        fi
         sc_server_cells "$name"
         style= mark=' '
         ((i == sel)) && style=$C_SEL mark=$SC_G_SEL
@@ -147,14 +283,18 @@ sc_draw_servers() {
         sc_fit "$CELL_INFO" "$iw"; line+="$CELL_INFO_C$REPLY$C_NORM"
         sc_frame_add "$line$C_RESET"
     done
+    # J/K (reorder) is listed in the help screen; the footer has to fit 80 columns.
     sc_ui_end_frame "$SC_G_UPDOWN" move "$SC_G_ENTER" details a add e edit d delete \
-        s ssh J/K reorder r refresh '?' help q quit
+        s ssh r refresh '?' help q quit
 }
 
 # --- server detail ------------------------------------------------------------
 
+SC_DET_SCROLL=0 SC_DET_SCROLL_MAX=0 SC_DET_MIN_PROCS=3
+
 sc_view_detail() {
     local name=$1 dirty=1 last=0
+    SC_DET_SCROLL=0
     while :; do
         sc_ui_check_resize && dirty=1
         if ((EPOCHSECONDS - last >= SC_SET[detail_refresh])); then
@@ -169,6 +309,7 @@ sc_view_detail() {
         sc_read_key 0.5 || continue
         dirty=1
         SC_MSG=
+        sc_detail_scroll_key && continue
         case $SC_KEY in
             ESC | q | LEFT | h) return 0 ;;
             r)
@@ -229,9 +370,31 @@ sc_detail_bar_line() {
     SC_FRAME+=("  $C_BOLD$label$C_NORM$bar $pt  $C_DIM$REPLY$C_RESET")
 }
 
+# Scroll keys of the detail view: one row, one page (the visible content
+# rows), top, bottom. Status 1 for other keys. sc_draw_detail clamps.
+sc_detail_scroll_key() {
+    local page=$((SC_ROWS - 3))
+    ((page < 1)) && page=1
+    case $SC_KEY in
+        UP | k) ((SC_DET_SCROLL > 0)) && ((SC_DET_SCROLL--)) ;;
+        DOWN | j) ((SC_DET_SCROLL < SC_DET_SCROLL_MAX)) && ((SC_DET_SCROLL++)) ;;
+        PGUP) ((SC_DET_SCROLL -= page)) ;;
+        PGDN) ((SC_DET_SCROLL += page)) ;;
+        HOME | g) SC_DET_SCROLL=0 ;;
+        END | G) SC_DET_SCROLL=$SC_DET_SCROLL_MAX ;;
+        *) return 1 ;;
+    esac
+    return 0
+}
+
+# Detail view of server $1. The content below the title row scrolls:
+# SC_DET_SCROLL is the first content row shown; it is clamped here to
+# 0..SC_DET_SCROLL_MAX (content rows minus visible rows), so key handlers
+# and resizes only need to change it.
 sc_draw_detail() {
     local name=$1 rc=${SC_M[$1|rc]-} status line v used total pct mnt size room n=0 row
-    local iface rxv txv
+    local iface rxv txv h total_rows
+    h=$((SC_ROWS - 3))
     if [[ -z $rc ]]; then
         status="connecting$SC_G_ELL"
     elif ((rc == 0)); then
@@ -319,17 +482,28 @@ sc_draw_detail() {
         fi
         sc_frame_add ""
 
-        room=$((SC_ROWS - 2 - ${#SC_FRAME[@]} - 1))
-        if ((room > 0)); then
-            sc_proc_header
-            sc_frame_text "$C_BOLD" "  $REPLY"
-            n=0
-            while IFS= read -r row && ((n++ < room)); do
-                [[ -n $row ]] || continue
-                sc_proc_line "$row"
-                sc_frame_text "" "  $REPLY"
-            done <<<"${SC_M[$name|procs]}"
-        fi
+        # Processes fill the rest of the screen, but at least SC_DET_MIN_PROCS
+        # rows (reachable by scrolling); 'p' shows the full list.
+        room=$((h - (${#SC_FRAME[@]} - 1) - 1))
+        ((room < SC_DET_MIN_PROCS)) && room=$SC_DET_MIN_PROCS
+        sc_proc_header
+        sc_frame_text "$C_BOLD" "  $REPLY"
+        n=0
+        while IFS= read -r row && ((n++ < room)); do
+            [[ -n $row ]] || continue
+            sc_proc_line "$row"
+            sc_frame_text "" "  $REPLY"
+        done <<<"${SC_M[$name|procs]}"
+    fi
+
+    total_rows=$((${#SC_FRAME[@]} - 1))
+    SC_DET_SCROLL_MAX=$((total_rows > h ? total_rows - h : 0))
+    ((SC_DET_SCROLL > SC_DET_SCROLL_MAX)) && SC_DET_SCROLL=$SC_DET_SCROLL_MAX
+    ((SC_DET_SCROLL < 0)) && SC_DET_SCROLL=0
+    if ((SC_DET_SCROLL_MAX > 0)); then
+        SC_FRAME=("${SC_FRAME[0]}" "${SC_FRAME[@]:1+SC_DET_SCROLL:h}")
+        # Visible content rows and total, e.g. "1-21/33".
+        SC_FRAME_STATUS="$((SC_DET_SCROLL + 1))-$((SC_DET_SCROLL + h))/$total_rows"
     fi
     sc_ui_end_frame p processes s ssh x snippets e edit m modules r refresh esc back
 }
@@ -586,16 +760,19 @@ scat $SC_VERSION - keyboard reference
 
 Everywhere
   Up/Down, j/k        move selection        PgUp/PgDn, g/G   page, top/bottom
-  Enter               open / confirm        Esc, q           back (quit on the server list)
-  Ctrl-C              quit immediately      Ctrl-Z           suspend (resume with fg)
+  Enter               open / confirm        Esc, q           back / quit
+  Ctrl-C              quit immediately      Ctrl-Z           suspend (fg)
 
 Server list
   a  add server       e  edit       d  delete      J/K  move down/up
   s  interactive ssh  r  refresh    ?  this help
+  With groups: sorted by group and name; J/K reorders only without groups.
 
 Server detail
   p  processes        s  ssh        x  snippets    e  edit server
   m  modules          r  refresh
+  Up/Down, j/k        scroll one row        PgUp/PgDn        scroll one page
+  Home/End, g/G       top / bottom          position shown at bottom right
 
 Processes
   c/m/p/n  sort by cpu / memory / pid / name       K  send SIGTERM (asks first)
@@ -604,7 +781,8 @@ Snippets
   Enter  run on this server (asks first)   a/e/d  add / edit / delete
 
 Forms
-  Enter  edit field (Enter accepts, Esc cancels)   s  save   t  test connection   Esc  cancel
+  Enter  edit field (Enter accepts, Esc cancels)   s  save   t  test connection
+  Esc  cancel the form
   Line editor: Left/Right, Home/End (Ctrl-A/E), Backspace/Del, Ctrl-U/Ctrl-K
 
 Config: $SC_CONFIG_DIR
@@ -741,7 +919,7 @@ sc_form_server() {
         [user]="Optional. Default: from ~/.ssh/config or your local user name"
         [identity]="Optional private key, e.g. ~/.ssh/id_ed25519. Passwords are never stored - use keys/ssh-agent."
         [jump]="Optional ProxyJump host, e.g. admin@bastion.example.com:22"
-        [group]="Optional tag shown in the list, e.g. production"
+        [group]="Optional; the list shows servers under group headings"
     )
     SC_FORM_VAL=([name]=$orig)
     for f in "${SC_SERVER_FIELDS[@]}"; do

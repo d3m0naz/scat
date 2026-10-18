@@ -6,7 +6,7 @@
 # Screen layout: row 0 header, rows 1..ROWS-3 body, ROWS-2 status, ROWS-1 footer.
 
 SC_ROWS=24 SC_COLS=80
-SC_MIN_ROWS=12 SC_MIN_COLS=60
+SC_MIN_ROWS=24 SC_MIN_COLS=80
 SC_RESIZED=1 SC_FULL_REDRAW=1 SC_UI_ACTIVE=0
 SC_STTY_SAVED=
 SC_MSG= SC_MSG_LEVEL=info
@@ -187,14 +187,31 @@ sc_frame_text() {
 
 # Starts a frame with the header; returns 1 (after drawing a notice) when
 # the terminal is too small for the views.
+# Below the minimum size no view is drawn, only this notice in the middle
+# of the screen; keys keep working (q leaves the view, Ctrl-C quits).
+sc_ui_too_small() {
+    local msg="Terminal too small: at least ${SC_MIN_COLS}${SC_G_TIMES}${SC_MIN_ROWS} needed (now ${SC_COLS}${SC_G_TIMES}${SC_ROWS})"
+    local hint="Enlarge the window, or press q to quit." i pad
+    SC_FRAME=()
+    for ((i = 0; i < SC_ROWS; i++)); do SC_FRAME+=(""); done
+    for i in 0 1; do
+        [[ $i == 1 ]] && msg=$hint
+        if ((${#msg} < SC_COLS)); then
+            sc_repeat ' ' $(((SC_COLS - ${#msg}) / 2)); pad=$REPLY
+        else
+            pad=
+        fi
+        sc_fit "$pad$msg" "$SC_COLS"
+        SC_FRAME[(SC_ROWS - 1) / 2 + i]=$C_BOLD$REPLY$C_RESET
+    done
+    sc_ui_render
+}
+
 sc_ui_begin_frame() {
     local left=" scat $SC_G_SEP $1" right=" $2  " i
-    SC_FRAME=()
+    SC_FRAME=() SC_FRAME_STATUS=
     if ((SC_ROWS < SC_MIN_ROWS || SC_COLS < SC_MIN_COLS)); then
-        for ((i = 0; i < SC_ROWS; i++)); do SC_FRAME+=(""); done
-        sc_fit " Terminal too small (${SC_COLS}x${SC_ROWS}, need ${SC_MIN_COLS}x${SC_MIN_ROWS})" "$SC_COLS"
-        SC_FRAME[SC_ROWS / 2]=$C_BOLD$REPLY$C_RESET
-        sc_ui_render
+        sc_ui_too_small
         return 1
     fi
     ((${#right} > SC_COLS / 2)) && right=
@@ -203,22 +220,29 @@ sc_ui_begin_frame() {
 }
 
 # Finishes the frame with status line and footer, then renders it.
-# Args: key/label pairs for the footer, e.g. "q" "quit".
+# Args: key/label pairs for the footer, e.g. "q" "quit". SC_FRAME_STATUS
+# (set by the view, e.g. a scroll position) is shown dimmed at the right
+# end of the status line.
 sc_ui_end_frame() {
-    local body=$((SC_ROWS - 2)) line= plain=0 seg color
+    local body=$((SC_ROWS - 2)) line= plain=0 seg color right=${SC_FRAME_STATUS-}
     while ((${#SC_FRAME[@]} < body)); do SC_FRAME+=(""); done
     SC_FRAME=("${SC_FRAME[@]:0:body}")
+    [[ -n $right ]] && right="$right "
+    ((${#right} > SC_COLS / 2)) && right=
     if [[ -n $SC_MSG ]]; then
         case $SC_MSG_LEVEL in
             error) color=$C_RED$C_BOLD ;;
             warn) color=$C_YELLOW ;;
             *) color=$C_CYAN ;;
         esac
-        sc_fit " $SC_MSG" "$SC_COLS"
-        SC_FRAME+=("$color$REPLY$C_RESET")
+        sc_fit " $SC_MSG" $((SC_COLS - ${#right}))
+        line=$color$REPLY$C_RESET
     else
-        SC_FRAME+=("")
+        sc_repeat ' ' $((SC_COLS - ${#right}))
+        line=$REPLY
     fi
+    SC_FRAME+=("$line$C_DIM$right$C_RESET")
+    line=
     while (($# >= 2)); do
         seg=" $1 $2 "
         ((plain + ${#seg} > SC_COLS)) && break

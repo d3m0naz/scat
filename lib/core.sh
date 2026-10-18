@@ -3,7 +3,7 @@
 # and number formatting, input validation and a timeout runner (macOS has no
 # coreutils `timeout`).
 
-SC_VERSION="0.1.0"
+SC_VERSION="0.2.0"
 SC_ERR=
 
 sc_die() {
@@ -46,11 +46,11 @@ sc_glyphs_init() {
     charmap=$(locale charmap 2>/dev/null)
     if [[ ${SC_SET[ascii]:-0} == 1 || $charmap != UTF-8 ]]; then
         SC_G_FULL='#' SC_G_EMPTY='.' SC_G_DOT='*' SC_G_HOLLOW='o' SC_G_ELL='~'
-        SC_G_SEP='|' SC_G_SEL='>' SC_G_UPDOWN='^v' SC_G_RX='rx' SC_G_TX='tx' SC_G_ENTER='Enter'
+        SC_G_SEP='|' SC_G_SEL='>' SC_G_UPDOWN='^v' SC_G_RX='rx' SC_G_TX='tx' SC_G_ENTER='Enter' SC_G_HLINE='-' SC_G_TIMES='x'
         SC_G_EIGHTHS=()
     else
         SC_G_FULL='█' SC_G_EMPTY='░' SC_G_DOT='●' SC_G_HOLLOW='○' SC_G_ELL='…'
-        SC_G_SEP='·' SC_G_SEL='▶' SC_G_UPDOWN='↑↓' SC_G_RX='↓' SC_G_TX='↑' SC_G_ENTER='⏎'
+        SC_G_SEP='·' SC_G_SEL='▶' SC_G_UPDOWN='↑↓' SC_G_RX='↓' SC_G_TX='↑' SC_G_ENTER='⏎' SC_G_HLINE='─' SC_G_TIMES='×'
         # Partial cells for 1/8 .. 7/8 of a cell, indexed by eighths.
         SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
     fi

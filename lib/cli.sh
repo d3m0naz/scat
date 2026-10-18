@@ -16,13 +16,20 @@ sc_server_target() {
 }
 
 sc_cli_list() {
-    local name
+    local name i
     if ((${#SC_SERVERS[@]} == 0)); then
         printf 'No servers configured (%s).\n' "$SC_SERVERS_FILE"
         return 0
     fi
     printf '%-20s %-40s %s\n' NAME TARGET GROUP
-    for name in "${SC_SERVERS[@]}"; do
+    # Same rows as the TUI list: with groups, "-- group --" headings.
+    sc_list_build
+    for i in "${!SC_LIST_VAL[@]}"; do
+        name=${SC_LIST_VAL[i]}
+        if [[ ${SC_LIST_KIND[i]} == h ]]; then
+            printf -- '-- %s --\n' "$name"
+            continue
+        fi
         sc_server_target "$name"
         printf '%-20s %-40s %s\n' "$name" "$REPLY" "${SC_SRV[$name|group]}"
     done
