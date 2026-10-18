@@ -205,15 +205,22 @@
 <ul>
   <li><strong>Keys only.</strong> scat never asks for or stores passwords. Monitoring uses <code>ssh -o BatchMode=yes</code>.</li>
   <li><strong>Plain config.</strong> Files are parsed as data, never evaluated, and written with mode 600.</li>
-  <li><strong>Plain Bash.</strong> No runtime dependencies beyond Bash 5 and tools that ship with macOS.</li>
+  <li><strong>Plain Bash.</strong> No runtime dependencies beyond Bash 5 and standard Unix tools: <code>ssh</code>, <code>tput</code>, <code>stty</code>, <code>awk</code>, <code>sed</code>, <code>sort</code>, <code>mktemp</code>, <code>grep</code>, <code>pkill</code>.</li>
 </ul>
 
-<h2>install</h2>
-<p>Requires macOS and Bash 5 from Homebrew. The system <code>/bin/bash</code> is 3.2 and is not supported.</p>
-<pre><span class="p">$ </span>brew install bash
-<span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
+<h2>bash 5 or newer</h2>
+<p>scat is a Bash script that runs on the machine you work on. It is written for any system with Bash 5 or newer and the usual Unix tools. So far it has been run on macOS (Apple Silicon); Linux and FreeBSD as the machine running scat have not been tested yet. Check your version with <code>bash --version</code>.</p>
+<table>
+  <tr><th>system</th><th>how to get Bash 5</th></tr>
+  <tr><td>macOS</td><td><code>brew install bash</code>, then put <code>/opt/homebrew/bin</code> first in <code>PATH</code>. The system <code>/bin/bash</code> is 3.2 and is not supported.</td></tr>
+  <tr><td>Linux</td><td>Usually installed already; otherwise <code>apt install bash</code>, <code>dnf install bash</code> or <code>pacman -S bash</code>.</td></tr>
+  <tr><td>FreeBSD /<br>OPNsense</td><td><code>pkg install bash</code></td></tr>
+</table>
+
+<h2>install scat</h2>
+<pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
 <span class="p">$ </span>scat --help</pre>
-<p>The installer checks the SHA-256 of the release archive before it installs anything. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+<p>The installer runs with the first <code>bash</code> in <code>PATH</code>, so set up Bash 5 first. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
 
 <h2>keys</h2>
 <table>
@@ -237,7 +244,7 @@
 <p>The terminal needs at least 80×24. In a smaller window scat shows a short notice until the window is large enough again.</p>
 
 <h2>remote hosts</h2>
-<p>Remote hosts need a POSIX <code>sh</code> with <code>awk</code>, <code>ps</code> and <code>df</code>. Linux and FreeBSD (including OPNsense) give full metrics. macOS hosts work on a best-effort basis.</p>
+<p>Your servers do not need Bash: scat only needs SSH access and a POSIX <code>sh</code> with <code>awk</code>, <code>ps</code> and <code>df</code> there. Tested live: Linux (Debian 13, arm64) and FreeBSD 15 (OPNsense), both with full metrics. macOS hosts work on a best-effort basis.</p>
 
 <h2>links</h2>
 <ul>

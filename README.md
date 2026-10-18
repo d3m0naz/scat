@@ -1,6 +1,6 @@
 # scat
 
-A Bash TUI for macOS to watch and manage servers over SSH: keep a list of
+A Bash terminal UI to watch and manage servers over SSH: keep a list of
 servers, watch their status and system metrics, look at processes, open a
 shell, and run saved commands. Docker and Kubernetes support are planned (see below).
 
@@ -15,22 +15,46 @@ shell, and run saved commands. Docker and Kubernetes support are planned (see be
 
 ## Installation
 
-Requirements: macOS (tested on macOS 26 / Darwin 25.6, Apple Silicon) with
-**Bash 5 from Homebrew**. The system `/bin/bash` is 3.2 and is not supported.
+scat is a Bash script that runs on the machine you work on. It is written
+for any system with Bash 5 or newer and the usual Unix tools. So far it has
+been run on macOS (macOS 26, Apple Silicon, Bash 5.3); Linux and FreeBSD as
+the machine running scat have not been tested yet.
+
+### Bash 5 or newer
+
+Bash 5 is needed on the machine that runs scat (not on your servers). Check
+with `bash --version`.
+
+| System | How to get Bash 5 |
+|---|---|
+| macOS | `brew install bash`, then put `/opt/homebrew/bin` first in `PATH` (e.g. `export PATH="/opt/homebrew/bin:$PATH"` in `~/.zshrc`). The system `/bin/bash` is 3.2 and is not supported. |
+| Linux | Usually installed already; otherwise from the package manager: `apt install bash`, `dnf install bash` or `pacman -S bash`. |
+| FreeBSD / OPNsense | `pkg install bash` (installs `/usr/local/bin/bash`). |
+
+The script starts with `#!/usr/bin/env bash`, so the first `bash` in `PATH`
+must be Bash 5. Older versions are refused with a short message. Besides
+Bash, scat uses `ssh`, `tput`, `stty`, `awk`, `sed`, `sort`, `mktemp`,
+`grep` and `pkill`; on macOS they ship with the system. If one is missing,
+startup lists it (the install hint printed there is currently written for
+Homebrew). `jq` is not needed.
+
+### Install scat
 
 ```sh
-brew install bash                      # installs /opt/homebrew/bin/bash (5.3)
-# make sure /opt/homebrew/bin comes first in PATH, e.g. in ~/.zshrc:
-export PATH="/opt/homebrew/bin:$PATH"
-
 # install the latest release (verifies the SHA-256 of the archive first)
 curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
+scat --help
 ```
 
-The installer puts scat into `~/.local/share/scat-<version>` and links
-`~/.local/bin/scat` to it. Use `SCAT_PREFIX=/some/dir` to choose another
-location. If `~/.local/bin` is not on your PATH, add it, e.g. in `~/.zshrc`:
-`export PATH="$HOME/.local/bin:$PATH"`.
+The installer runs with the first `bash` in `PATH`, so set up Bash 5 first.
+It downloads the release archive, compares its SHA-256 with the value pinned
+in `install.sh` and installs nothing if they differ. scat goes into
+`~/.local/share/scat-<version>`, and `~/.local/bin/scat` links to it. Use
+`SCAT_PREFIX=/some/dir` to choose another location. If `~/.local/bin` is not
+on your `PATH`, add it, e.g. `export PATH="$HOME/.local/bin:$PATH"` in your
+shell's startup file (`~/.zshrc`, `~/.bashrc`, …).
+
+Releases and checksums: https://github.com/d3m0naz/scat/releases
 
 To work from a clone instead (for development), run it in place:
 
@@ -39,17 +63,13 @@ git clone https://github.com/d3m0naz/scat.git && cd scat
 ./scat
 ```
 
-Releases and checksums: https://github.com/d3m0naz/scat/releases
+### Remote hosts
 
-The script starts with `#!/usr/bin/env bash` and refuses to run on Bash < 5,
-printing the instructions above. Everything else it needs ships with macOS:
-`ssh`, `tput`, `stty`, `awk`, `sed`, `sort`, `mktemp`, `grep`, `pkill`.
-If any of these is missing, startup prints a `brew install …` hint. `jq` is
-not needed.
-
-Remote hosts need a POSIX `sh` plus `awk`, `ps` and `df`. Linux gets full
-and FreeBSD (including OPNsense) get full metrics; FreeBSD has no iowait
-figure. macOS hosts work on a best-effort basis. Other BSDs show no CPU or
+Your servers do not need Bash: scat only needs SSH access and a POSIX `sh`
+with `awk`, `ps` and `df` there. Tested live: Linux (Debian 13, arm64) and
+FreeBSD 15 (OPNsense). Linux and FreeBSD get full metrics; FreeBSD has no
+iowait figure. macOS hosts work on a best-effort basis (the collector has
+only been run locally on macOS, not over SSH). Other BSDs show no CPU or
 network rates; the status page says so instead of showing numbers.
 
 ## Usage
@@ -62,7 +82,8 @@ scat --config-dir DIR   # use another config directory
 scat --help | --version
 ```
 
-The TUI needs a terminal of at least **80×24** (the macOS Terminal default).
+The TUI needs a terminal of at least **80×24** (a common default size, e.g.
+in macOS Terminal).
 In a smaller window it draws no view, only a centered notice such as
 `Terminal too small: at least 80×24 needed (now 70×20)`. `q` still leaves
 the current view (and quits on the server list), Ctrl-C quits, and as soon
@@ -74,8 +95,8 @@ as the window is large enough again the view returns. `--list` and
 scat never asks for or stores passwords. Monitoring connections use
 `ssh -o BatchMode=yes`, so they can only authenticate with SSH keys, keys in
 `ssh-agent`, or whatever your `~/.ssh/config` provides. Load your key once
-(`ssh-add --apple-use-keychain ~/.ssh/id_ed25519`) or set an *Identity file*
-on the server.
+(`ssh-add ~/.ssh/id_ed25519`; on macOS, `--apple-use-keychain` keeps it in
+the keychain) or set an *Identity file* on the server.
 
 Host keys are verified as usual against `~/.ssh/known_hosts`. For a new
 server, press `s` once and accept the fingerprint in the interactive session.
