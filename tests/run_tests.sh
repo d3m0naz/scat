@@ -2,7 +2,8 @@
 # Tests for the non-interactive parts: config read/write, validation, ssh
 # command construction, error classification, metric parsing, formatting,
 # the timeout runner and the local run of the remote collector.
-# Usage: tests/run_tests.sh   (set SC_TEST_NETWORK=0 to skip ssh failure tests)
+# Usage: tests/run_tests.sh   (set SC_TEST_NETWORK=0 to skip ssh failure tests,
+#                              SC_TEST_RELEASE=1 to require install.sh = SC_VERSION)
 
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ]; then
     echo "tests need Bash 5 (brew install bash)" >&2
@@ -850,6 +851,31 @@ eq "--check: vtnet0 rx 12.50, tx 0.25 MB/s" 1 "$(grep -c '^  Network   vtnet0 .*
 detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail opn)
 eq "detail: order on FreeBSD" ordered "$(order_of <<<"$detail")"
 eq "detail: two interfaces, one row each" 2 "$(net_rows <<<"$detail" | grep -c .)"
+
+# ------------------------------------------------------------------------------
+section "version consistency (scat, website, installer)"
+site=$SC_ROOT/docs/index.html
+eq "scat --version is SC_VERSION" "scat $SC_VERSION" "$("$SC_ROOT/scat" --version)"
+eq "website hero names SC_VERSION" 1 "$(grep -c "<p class=\"tag\">scat $SC_VERSION " "$site")"
+eq "website release link is v$SC_VERSION" 1 "$(grep -c "releases/tag/v$SC_VERSION\"" "$site")"
+eq "website install note names SC_VERSION" 1 "$(grep -c "This installs scat $SC_VERSION " "$site")"
+eq "website footer names SC_VERSION" 1 "$(grep -c "<p>scat $SC_VERSION · " "$site")"
+eq "website: no other version anywhere" "$SC_VERSION" \
+    "$(grep -oE '(scat |tag/v)[0-9]+\.[0-9]+\.[0-9]+' "$site" | sed -E 's/^(scat |tag\/v)//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+eq "website: hero and install note share one date" 1 \
+    "$(grep -E 'class="(tag|install-note)"' "$site" | grep -oE 'datetime="[0-9-]+"' | sort -u | grep -c .)"
+# install.sh pins VERSION and the archive's SHA256. During release prep it
+# lags behind on purpose (the archive does not exist yet), so a mismatch is
+# only a note; SC_TEST_RELEASE=1 makes it a failure (run that after the
+# release, before pushing the website).
+inst=$(sed -nE 's/^VERSION=([0-9.]+)$/\1/p' "$SC_ROOT/install.sh")
+if [[ $inst == "$SC_VERSION" || ${SC_TEST_RELEASE:-0} == 1 ]]; then
+    eq "install.sh VERSION is SC_VERSION" "$SC_VERSION" "$inst"
+else
+    printf '  note  install.sh still installs %s, scat is %s: update VERSION and\n' "$inst" "$SC_VERSION"
+    printf '        SHA256 after the release (check with SC_TEST_RELEASE=1)\n'
+fi
+eq "install.sh pins a SHA-256" 1 "$(grep -cE '^SHA256=[0-9a-f]{64}$' "$SC_ROOT/install.sh")"
 
 # ------------------------------------------------------------------------------
 if [[ ${SC_TEST_NETWORK:-1} == 1 ]]; then
