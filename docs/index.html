@@ -191,6 +191,11 @@
 <p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
 
+<h2>install scat</h2>
+<pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
+<span class="p">$ </span>scat --help</pre>
+<p>The installer runs with the first <code>bash</code> in <code>PATH</code>, so set up Bash 5 first. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
+
 <h2>what it does</h2>
 <ul>
   <li>Keeps a list of servers: add, edit, delete and reorder, with group headings and optional jump hosts.</li>
@@ -216,11 +221,6 @@
   <tr><td>Linux</td><td>Usually installed already; otherwise <code>apt install bash</code>, <code>dnf install bash</code> or <code>pacman -S bash</code>.</td></tr>
   <tr><td>FreeBSD /<br>OPNsense</td><td><code>pkg install bash</code></td></tr>
 </table>
-
-<h2>install scat</h2>
-<pre><span class="p">$ </span>curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
-<span class="p">$ </span>scat --help</pre>
-<p>The installer runs with the first <code>bash</code> in <code>PATH</code>, so set up Bash 5 first. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
 
 <h2>keys</h2>
 <table>
