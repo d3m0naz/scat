@@ -21,12 +21,23 @@ brew install bash                      # installs /opt/homebrew/bin/bash (5.3)
 # make sure /opt/homebrew/bin comes first in PATH, e.g. in ~/.zshrc:
 export PATH="/opt/homebrew/bin:$PATH"
 
-# get scat (placeholder URL: the repository is still being renamed)
-git clone https://github.com/d3m0naz/scat.git && cd scat
-
-# optional: put scat on your PATH (symlinks are resolved)
-ln -s "$PWD/scat" /opt/homebrew/bin/scat
+# install the latest release (verifies the SHA-256 of the archive first)
+curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash
 ```
+
+The installer puts scat into `~/.local/share/scat-<version>` and links
+`~/.local/bin/scat` to it. Use `SCAT_PREFIX=/some/dir` to choose another
+location. If `~/.local/bin` is not on your PATH, add it, e.g. in `~/.zshrc`:
+`export PATH="$HOME/.local/bin:$PATH"`.
+
+To work from a clone instead (for development), run it in place:
+
+```sh
+git clone https://github.com/d3m0naz/scat.git && cd scat
+./scat
+```
+
+Releases and checksums: https://github.com/d3m0naz/scat/releases
 
 The script starts with `#!/usr/bin/env bash` and refuses to run on Bash < 5,
 printing the instructions above. Everything else it needs ships with macOS:
