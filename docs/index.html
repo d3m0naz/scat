@@ -153,8 +153,9 @@
 
 <h2>what it does</h2>
 <ul>
-  <li>Keeps a list of servers, grouped and with optional jump hosts.</li>
-  <li>Shows status and live metrics: CPU, memory, load, uptime, disks, network.</li>
+  <li>Keeps a list of servers: add, edit, delete and reorder, with group headings and optional jump hosts.</li>
+  <li>Shows status and live metrics: CPU, memory, load, uptime, disks, network per interface.</li>
+  <li>Scrolls the detail view when it is taller than the screen, with a position indicator.</li>
   <li>Lists processes, sorts them and sends SIGTERM after a confirmation.</li>
   <li>Opens an SSH shell, or runs saved commands on a server.</li>
   <li>Runs one-shot checks from scripts: <code>scat --check web1</code>.</li>
@@ -177,14 +178,23 @@
 <h2>keys</h2>
 <table>
   <tr><td>j / k, arrows</td><td>move</td></tr>
+  <tr><td>PgUp / PgDn</td><td>move one page</td></tr>
+  <tr><td>g / G, Home / End</td><td>top / bottom</td></tr>
   <tr><td>Enter</td><td>open</td></tr>
+  <tr><td>a / e / d</td><td>add / edit / delete a server</td></tr>
+  <tr><td>J / K</td><td>move a server down / up</td></tr>
   <tr><td>s</td><td>ssh shell</td></tr>
   <tr><td>p</td><td>processes</td></tr>
+  <tr><td>m</td><td>modules</td></tr>
   <tr><td>x</td><td>snippets</td></tr>
+  <tr><td>c / m / p / n</td><td>processes: sort by CPU, memory, PID, name</td></tr>
+  <tr><td>K</td><td>processes: send SIGTERM (asks first)</td></tr>
   <tr><td>r</td><td>refresh now</td></tr>
   <tr><td>?</td><td>help</td></tr>
   <tr><td>q / Esc</td><td>back, quit on the list</td></tr>
+  <tr><td>Ctrl-C</td><td>quit</td></tr>
 </table>
+<p>The terminal needs at least 80×24. In a smaller window scat shows a short notice until the window is large enough again.</p>
 
 <h2>remote hosts</h2>
 <p>Remote hosts need a POSIX <code>sh</code> with <code>awk</code>, <code>ps</code> and <code>df</code>. Linux and FreeBSD (including OPNsense) give full metrics. macOS hosts work on a best-effort basis.</p>
