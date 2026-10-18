@@ -11,3 +11,7 @@ servers.conf
 .DS_Store
 *.swp
 *~
+
+# Test artifacts (tests/tui_smoke.exp run without a config dir)
+.stty.before
+.stty.after
