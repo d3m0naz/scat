@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/favicon.svg" width="96" alt="scat paw logo">
+</p>
+
 # scat
 
 **Watch and manage your servers over SSH, from the terminal.**
