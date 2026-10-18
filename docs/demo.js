@@ -6,8 +6,8 @@
  *
  * Frames are 80x24 like the real minimum terminal. ScatDemo.frame() builds
  * one frame as HTML from a plain state object and has no DOM access, so it
- * can be checked outside a browser. With prefers-reduced-motion one finished
- * frame is shown and nothing moves. */
+ * can be checked outside a browser. With prefers-reduced-motion the server
+ * list is shown as a still frame and nothing moves. */
 (function (global) {
   "use strict";
 
@@ -303,7 +303,7 @@
 
   function still() {
     stop();
-    st = { view: "detail", sel: 4, t: clock0, live: liveAt(0, 1), pressed: "" };
+    st = { view: "list", sel: 4, t: clock0, live: liveAt(0, 1), pressed: "" };
     draw();
   }
 
