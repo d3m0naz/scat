@@ -1,0 +1,5 @@
+smartctl 7.4 2023-08-01 r5530 [x86_64-linux] (local build)
+Copyright (C) 2002-23, Bruce Allen, Christian Franke, www.smartmontools.org
+
+Smartctl open device: /dev/sdx failed: Unknown USB bridge [0x152d:0x0578]
+Please specify device type with the -d option.

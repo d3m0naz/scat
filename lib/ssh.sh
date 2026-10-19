@@ -38,6 +38,7 @@ sc_runtime_cleanup() {
         pkill -TERM -P "$pid" 2>/dev/null
         kill -TERM "$pid" 2>/dev/null
     done
+    declare -F sc_modules_hook >/dev/null && sc_modules_hook cleanup
     sc_ssh_close_masters
     rm -rf -- "$SC_RUNTIME_DIR"
     SC_RUNTIME_DIR=
@@ -297,7 +298,7 @@ sc_metrics_load() {
             disk) disks+=("$REPLY") ;;
             netif) [[ $REPLY =~ ^[A-Za-z0-9._@-]+\|[0-9]+\|[0-9]+$ ]] && netifs+=("$REPLY") ;;
             proc) procs+=("$REPLY") ;;
-            rc | ts | err | os | hostname | kernel | distro | uptime | load | cores | proc_count | \
+            rc | ts | err | os | hostname | kernel | distro | uptime | load | cores | proc_count | docker | \
                 cpu_* | mem_* | swap_* | net_*)
                 SC_M[$name|$key]=$REPLY ;;
         esac

@@ -125,6 +125,13 @@ sc_list_toggle_headings() {
     sc_list_fix "$sel" 1
 }
 
+# Key f: temperature unit C <-> F for this session only, like t;
+# settings.conf keeps the start value (temp_unit). Message in REPLY.
+sc_list_toggle_temp() {
+    if [[ ${SC_SET[temp_unit]} == f ]]; then SC_SET[temp_unit]=c; else SC_SET[temp_unit]=f; fi
+    REPLY="Temperature in ${SC_G_DEG-}${SC_SET[temp_unit]^^}"
+}
+
 sc_view_servers() {
     local sel=0 top=0 dirty=1 last_fetch=0 n name line
     sc_list_build
@@ -141,6 +148,7 @@ sc_view_servers() {
             dirty=1
         fi
         sc_poll_results && dirty=1
+        sc_modules_hook list_tick && dirty=1
         if ((dirty)); then
             sc_list_scroll "$sel" "$top" $((SC_ROWS - 4))
             top=$REPLY
@@ -206,6 +214,10 @@ sc_view_servers() {
                 ((SC_LIST_GROUPED)) || line+="; no server has a group yet"
                 sc_msg info "Group headings $line"
                 ;;
+            f)
+                sc_list_toggle_temp
+                sc_msg info "$REPLY"
+                ;;
             r)
                 last_fetch=0
                 sc_msg info "Refreshing all servers${SC_G_ELL}"
@@ -220,6 +232,7 @@ sc_view_servers() {
 sc_server_cells() {
     local name=$1 rc=${SC_M[$1|rc]-}
     CELL_CPU=- CELL_MEM=- CELL_LOAD=- CELL_UP=- CELL_CPU_C= CELL_MEM_C= CELL_INFO_C=$C_DIM
+    CELL_TEMP=- CELL_TEMP_C=$C_DIM
     if [[ -z $rc ]]; then
         CELL_G=$SC_G_HOLLOW
         if [[ -n ${SC_M[$name|loading]-} ]]; then
@@ -236,6 +249,9 @@ sc_server_cells() {
             sc_level_color "$REPLY"
             CELL_CPU_C=$SC_LEVEL
         fi
+        if sc_fmt_temp "${SC_M[$name|cpu_temp]-}" "${SC_SET[temp_unit]}"; then
+            CELL_TEMP=$REPLY CELL_TEMP_C=$SC_TEMP_LEVEL
+        fi
         if sc_pct "${SC_M[$name|mem_used]-}" "${SC_M[$name|mem_total]-}"; then
             CELL_MEM="$REPLY%"
             sc_level_color "$REPLY"
@@ -246,6 +262,10 @@ sc_server_cells() {
         sc_fmt_duration "${SC_M[$name|uptime]-}"
         CELL_UP=$REPLY
         CELL_INFO=${SC_M[$name|distro]:-${SC_M[$name|os]-}}
+        # A module (drives) may report a problem here instead of the OS.
+        if sc_modules_list_status "$name"; then
+            CELL_INFO=$REPLY CELL_INFO_C=$SC_MOD_STATUS_C
+        fi
     fi
 }
 
@@ -267,12 +287,17 @@ sc_list_heading() {
 
 sc_draw_servers() {
     local sel=$1 top=$2 n=${#SC_SERVERS[@]} rows=${#SC_LIST_KIND[@]} h=$((SC_ROWS - 4)) i name line style mark plural=s
-    local nw=16 hw=0 pw=0 cw=5 mw=5 lw=6 uw=8 fixed iw
+    local nw=16 hw=0 pw=0 cw=5 tw=5 mw=5 lw=6 uw=8 fixed iw
     ((n == 1)) && plural=
     ((SC_SET[ping])) && pw=7
     printf -v line '%(%H:%M:%S)T' -1
     sc_ui_begin_frame "Servers" "$n server$plural $SC_G_SEP $line" || return
-    fixed=$((3 + nw + 1 + (pw ? pw + 1 : 0) + cw + 1 + mw + 1 + lw + 1 + uw + 1))
+    # At 80 columns with PING: 62 fixed, STATUS gets the remaining 18. Below
+    # the 80-column minimum (only in tests) TEMP goes before STATUS does.
+    fixed=$((3 + nw + 1 + (pw ? pw + 1 : 0) + cw + 1 + tw + 1 + mw + 1 + lw + 1 + uw + 1))
+    if ((SC_COLS - fixed < 8)); then
+        fixed=$((fixed - tw - 1)) tw=0
+    fi
     if ((SC_COLS - fixed >= 40)); then
         hw=$(((SC_COLS - fixed) / 2))
         ((hw > 32)) && hw=32
@@ -283,6 +308,7 @@ sc_draw_servers() {
     if ((hw)); then sc_fit "TARGET" "$hw"; line+="$REPLY "; fi
     if ((pw)); then sc_fit_right "PING" "$pw"; line+="$REPLY "; fi
     sc_fit_right "CPU" "$cw"; line+="$REPLY "
+    if ((tw)); then sc_fit_right "TEMP" "$tw"; line+="$REPLY "; fi
     sc_fit_right "MEM" "$mw"; line+="$REPLY "
     sc_fit_right "LOAD" "$lw"; line+="$REPLY "
     sc_fit_right "UPTIME" "$uw"; line+="$REPLY "
@@ -320,6 +346,7 @@ sc_draw_servers() {
             sc_fit_right "$REPLY" "$pw"; line+="$CELL_PING_C$REPLY$C_NORM "
         fi
         sc_fit_right "$CELL_CPU" "$cw"; line+="$CELL_CPU_C$REPLY$C_NORM "
+        if ((tw)); then sc_fit_right "$CELL_TEMP" "$tw"; line+="$CELL_TEMP_C$REPLY$C_NORM "; fi
         sc_fit_right "$CELL_MEM" "$mw"; line+="$CELL_MEM_C$REPLY$C_NORM "
         sc_fit_right "$CELL_LOAD" "$lw"; line+="$REPLY "
         sc_fit_right "$CELL_UP" "$uw"; line+="$REPLY "
@@ -334,7 +361,7 @@ sc_draw_servers() {
 
 # --- server detail ------------------------------------------------------------
 
-SC_DET_SCROLL=0 SC_DET_SCROLL_MAX=0 SC_DET_MIN_PROCS=3
+SC_DET_SCROLL=0 SC_DET_SCROLL_MAX=0 SC_DET_MIN_PROCS=3 SC_DET_MOD_PROCS=5
 
 sc_view_detail() {
     local name=$1 dirty=1 last=0
@@ -346,6 +373,7 @@ sc_view_detail() {
             last=$EPOCHSECONDS
         fi
         sc_poll_results && dirty=1
+        sc_modules_hook detail_tick "$name" && dirty=1
         if ((dirty)); then
             sc_draw_detail "$name"
             dirty=0
@@ -358,6 +386,7 @@ sc_view_detail() {
             ESC | q | LEFT | h) return 0 ;;
             r)
                 last=0
+                sc_modules_hook detail_refresh "$name"
                 sc_msg info "Refreshing$SC_G_ELL"
                 ;;
             p | ENTER) sc_view_processes "$name" ;;
@@ -393,6 +422,19 @@ sc_netif_values() {
     sc_fmt_mbs "$1"; rx=${REPLY% MB/s}
     sc_fmt_mbs "$2"
     printf -v REPLY 'rx %6s  tx %6s MB/s' "$rx" "${REPLY% MB/s}"
+}
+
+# Section heading of the detail view: label $1 in bold, padded to the label
+# column, then the dimmed note $2 (optional).
+sc_detail_heading() {
+    if [[ -n ${2-} ]]; then
+        sc_fit "$1" 12
+        local label=$REPLY
+        sc_fit "$2" $((SC_COLS - 14))
+        SC_FRAME+=("  $C_BOLD$label$C_NORM$C_DIM$REPLY$C_RESET")
+    else
+        sc_frame_text "$C_BOLD" "  $1"
+    fi
 }
 
 # One "label [bar] pct  detail" row of the detail view.
@@ -437,7 +479,7 @@ sc_detail_scroll_key() {
 # and resizes only need to change it.
 sc_draw_detail() {
     local name=$1 rc=${SC_M[$1|rc]-} status line v used total pct mnt size room n=0 row
-    local iface rxv txv h total_rows
+    local iface rxv txv h total_rows mod_rows=() before=()
     h=$((SC_ROWS - 3))
     if [[ -z $rc ]]; then
         status="connecting$SC_G_ELL"
@@ -493,7 +535,9 @@ sc_draw_detail() {
         fi
 
         sc_fit Load "$SC_DET_LW"
-        sc_frame_text "" "  $REPLY${SC_M[$name|load]:--}   ${SC_M[$name|proc_count]:-?} processes"
+        line="  $REPLY${SC_M[$name|load]:--}   ${SC_M[$name|proc_count]:-?} processes"
+        sc_fmt_temp "${SC_M[$name|cpu_temp]-}" "${SC_SET[temp_unit]}" && line+=" $SC_G_SEP CPU $REPLY"
+        sc_frame_text "" "$line"
         sc_frame_add ""
 
         if [[ -n ${SC_M[$name|disks]-} ]]; then
@@ -507,6 +551,7 @@ sc_draw_detail() {
             done <<<"${SC_M[$name|disks]}"
             sc_frame_add ""
         fi
+        sc_modules_hook detail_after_disks "$name"
 
         sc_frame_text "$C_BOLD" "  Network"
         if [[ -n ${SC_M[$name|netifs]-} ]]; then
@@ -526,18 +571,40 @@ sc_draw_detail() {
         fi
         sc_frame_add ""
 
+        # Module sections (e.g. Docker) go below the processes. They are
+        # drawn first, to know whether there are any.
+        before=("${SC_FRAME[@]}")
+        SC_FRAME=()
+        sc_modules_hook detail_draw "$name"
+        mod_rows=("${SC_FRAME[@]}")
+        SC_FRAME=("${before[@]}")
+
         # Processes fill the rest of the screen, but at least SC_DET_MIN_PROCS
-        # rows (reachable by scrolling); 'p' shows the full list.
-        room=$((h - (${#SC_FRAME[@]} - 1) - 1))
+        # rows (reachable by scrolling); exactly SC_DET_MOD_PROCS rows above
+        # module sections. 'p' shows the full list.
+        room=$((h - (${#SC_FRAME[@]} - 1) - 2))
         ((room < SC_DET_MIN_PROCS)) && room=$SC_DET_MIN_PROCS
+        ((${#mod_rows[@]})) && room=$SC_DET_MOD_PROCS
+        line="${SC_M[$name|proc_count]:-?} total"
+        if [[ -n ${SC_M[$name|procs]-} ]]; then
+            v=${SC_M[$name|procs]//[!$'\n']/}
+            n=$((${#v} + 1))
+            ((n > room)) && n=$room
+            line+=" $SC_G_SEP top $n by CPU"
+        fi
+        sc_detail_heading Processes "$line"
         sc_proc_header
-        sc_frame_text "$C_BOLD" "  $REPLY"
+        sc_frame_text "$C_DIM" "  $REPLY"
         n=0
         while IFS= read -r row && ((n++ < room)); do
             [[ -n $row ]] || continue
             sc_proc_line "$row"
             sc_frame_text "" "  $REPLY"
         done <<<"${SC_M[$name|procs]}"
+        if ((${#mod_rows[@]})); then
+            sc_frame_add ""
+            SC_FRAME+=("${mod_rows[@]}")
+        fi
     fi
 
     total_rows=$((${#SC_FRAME[@]} - 1))
@@ -554,9 +621,12 @@ sc_draw_detail() {
 
 # --- processes ----------------------------------------------------------------
 
+# Columns shared with the Docker section of the detail view: PID and USER
+# (8 + 10) are as wide as the container NAME there, so CPU%, MEM% and
+# RSS/MEM line up.
 sc_proc_header() {
     local out
-    sc_fit_right PID 7; out="$REPLY "
+    sc_fit PID 7; out="$REPLY "
     sc_fit USER 10; out+="$REPLY "
     sc_fit_right CPU% 6; out+="$REPLY "
     sc_fit_right MEM% 6; out+="$REPLY "
@@ -568,7 +638,7 @@ sc_proc_header() {
 sc_proc_line() {
     local pid user cpu mem rss cmd out width=${2:-$((SC_COLS - 2))}
     IFS='|' read -r pid user cpu mem rss cmd <<<"$1"
-    sc_fit_right "$pid" 7; out="$REPLY "
+    sc_fit "$pid" 7; out="$REPLY "
     sc_fit "$user" 10; out+="$REPLY "
     sc_fit_right "$cpu" 6; out+="$REPLY "
     sc_fit_right "$mem" 6; out+="$REPLY "
@@ -651,7 +721,7 @@ sc_draw_processes() {
     local name=$1 sel=$2 top=$3 sort=$4 i n=${#SC_PROC_ROWS[@]}
     sc_ui_begin_frame "$name $SC_G_SEP processes" "sorted by $sort $SC_G_SEP $n shown" || return
     sc_proc_header
-    sc_frame_text "$C_BOLD" "  $REPLY"
+    sc_frame_text "$C_DIM" "  $REPLY"
     if ((n == 0)); then
         if sc_metrics_online "$name"; then
             sc_frame_text "$C_DIM" "  No process data (ps not available?)"
@@ -811,13 +881,14 @@ Server list
   a  add server       e  edit       d  delete      J/K  move down/up
   s  interactive ssh  r  refresh    ?  this help
   t  group headings on/off for this session (start value: group_headings)
+  f  temperature in ${SC_G_DEG}C / ${SC_G_DEG}F for this session (start value: temp_unit)
   With groups: sorted by group and name; J/K reorders only without groups.
   PING: one ping from here to the host per refresh; - no reply, ! unknown
   host, jump: behind a jump host. Off with ping = 0 in settings.conf.
 
 Server detail
   p  processes        s  ssh        x  snippets    e  edit server
-  m  modules          r  refresh
+  m  modules (Docker) r  refresh
   Up/Down, j/k        scroll one row        PgUp/PgDn        scroll one page
   Home/End, g/G       top / bottom          position shown at bottom right
 
@@ -826,6 +897,10 @@ Processes
 
 Snippets
   Enter  run on this server (asks first)   a/e/d  add / edit / delete
+
+Docker (m in the detail view; only if the server has a docker command)
+  Read only: name, image, status, health, CPU, memory.   r  refresh now
+  Updated every 15 s. The detail view shows 5 containers, highest CPU first.
 
 Forms
   Enter  edit field (Enter accepts, Esc cancels)   s  save   t  test connection
@@ -841,9 +916,15 @@ EOF
 # --- modules ------------------------------------------------------------------
 
 sc_view_modules() {
-    local name=$1 sel=0 dirty=1 n=${#SC_MODULES[@]} i
+    local name=$1 sel=0 dirty=1 n i
+    if ((${#SC_MODULES[@]} == 0)); then
+        sc_msg info "No modules installed (lib/modules/)."
+        return 0
+    fi
+    sc_modules_for "$name"
+    n=${#SC_MODULES_AVAIL[@]}
     if ((n == 0)); then
-        sc_msg info "No modules installed. Docker and Kubernetes support are planned (lib/modules/)."
+        sc_msg info "No modules for $name: $REPLY"
         return 0
     fi
     while :; do
@@ -852,9 +933,9 @@ sc_view_modules() {
             if sc_ui_begin_frame "$name $SC_G_SEP modules" "$n available"; then
                 for ((i = 0; i < n; i++)); do
                     if ((i == sel)); then
-                        sc_frame_text "$C_SEL" "$SC_G_SEL ${SC_MODULE_LABEL[${SC_MODULES[i]}]}"
+                        sc_frame_text "$C_SEL" "$SC_G_SEL ${SC_MODULE_LABEL[${SC_MODULES_AVAIL[i]}]}"
                     else
-                        sc_frame_text "" "  ${SC_MODULE_LABEL[${SC_MODULES[i]}]}"
+                        sc_frame_text "" "  ${SC_MODULE_LABEL[${SC_MODULES_AVAIL[i]}]}"
                     fi
                 done
                 sc_ui_end_frame "$SC_G_UPDOWN" move "$SC_G_ENTER" open esc back
@@ -869,7 +950,7 @@ sc_view_modules() {
             continue
         fi
         case $SC_KEY in
-            ENTER) "${SC_MODULE_VIEW[${SC_MODULES[sel]}]}" "$name" ;;
+            ENTER) "${SC_MODULE_VIEW[${SC_MODULES_AVAIL[sel]}]}" "$name" ;;
             ESC | q | LEFT | h) return 0 ;;
         esac
     done

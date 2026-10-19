@@ -15,11 +15,13 @@
 
 scat is a Bash terminal UI. Keep a list of servers, watch CPU, memory, load,
 disks and network per interface, look at processes, open a shell or run saved
-commands. Your servers need nothing but SSH and a POSIX `sh`. Docker and
-Kubernetes support are planned (see below).
+commands. Your servers need nothing but SSH and a POSIX `sh`. Docker
+containers are shown read-only; Kubernetes support is planned (see below).
 
-- **Live status** for every server with ping time, grouped by your own group names
+- **Live status** for every server with ping time and CPU temperature, grouped by your own group names
 - **Detail view** with CPU, memory, swap, load, disks, network bars and processes
+- **Docker, read only:** containers with status, health, CPU and memory
+- **Drives:** temperature and SMART health of every disk, without waking sleeping disks
 - **Keys only:** no passwords are asked for or stored
 - **Plain config:** INI files, parsed as data and written with mode 600
 - **Five colour themes**, including high-contrast for bright or dim terminals
@@ -37,11 +39,11 @@ anything. Bash 5 is needed first (see [Bash 5 or newer](#bash-5-or-newer)).
 
 ```
  scat · Servers                                                               2 servers · 12:03:55
-   NAME             TARGET                    PING   CPU   MEM   LOAD   UPTIME STATUS
+   NAME                PING   CPU  TEMP   MEM   LOAD   UPTIME STATUS
  ── production ──
-▶● web1             deploy@203.0.113.10:22   14 ms   12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
+▶● web1               14 ms   12%  52°C   37%   0.52   12d 3h Ubuntu 24.04 LTS
  ── ungrouped ──
- ● db1              db.internal via basti…    jump     -     -      -        - authentication faile…
+ ● db1                 jump     -     -     -      -        - authentication failed - check key / s…
 ```
 
 ## Installation
@@ -143,10 +145,11 @@ be an alias defined there.
 | Where | Keys |
 |---|---|
 | Everywhere | `↑`/`↓` or `j`/`k` move · `PgUp`/`PgDn` · `g`/`G` top/bottom · `Enter` open · `Esc`/`q` back · `Ctrl-C` quit · `Ctrl-Z` suspend |
-| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `t` group headings on/off (this session) · `?` help · `q`/`Esc` quit |
-| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules · `r` refresh · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
+| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `t` group headings on/off (this session) · `f` °C/°F (this session) · `?` help · `q`/`Esc` quit |
+| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules (Docker) · `r` refresh · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
 | Processes | `c`/`m`/`p`/`n` sort by CPU/memory/PID/name · `K` send SIGTERM (asks first) · `r` refresh |
 | Snippets | `Enter` run on the current server (asks first) · `a`/`e`/`d` add/edit/delete |
+| Docker | `↑`/`↓` move · `r` refresh now · `Esc` back (no actions) |
 | Forms | `Enter` edit field · `s` save · `t` test connection · `Esc` cancel |
 | Line editor | `←`/`→`, `Home`/`End` (`Ctrl-A`/`Ctrl-E`), `Backspace`/`Del`, `Ctrl-U`/`Ctrl-K`, `Enter` accept, `Esc` cancel |
 
@@ -217,6 +220,9 @@ command = df -h
 | `theme` | default | see below | color theme of the TUI |
 | `ping` | 1 | 0/1 | PING column in the server list |
 | `group_headings` | 1 | 0/1 | group heading rows in the server list at start (`t` toggles them for the session) |
+| `temp_unit` | c | c/f | CPU temperature in °C or °F at start (`f` toggles it for the session) |
+| `drives` | 1 | 0/1 | Drives section (SMART temperature and health) in the detail view |
+| `drives_refresh` | 300 | 60–3600 | seconds between drive queries |
 
 **Themes:** `default` (the original colors, for dark terminals), `light`
 (for light terminal backgrounds), `solarized` (Solarized Dark), `nord`
@@ -267,14 +273,32 @@ works), `!` that the host name can't be resolved, `…` that no answer has
 arrived yet. ping does not know `~/.ssh/config` aliases, so an alias shows
 `!`. Servers behind a jump host show `jump` and are not pinged, because a
 ping from here would not say anything about them. The list never waits for
-ping. With the column, TARGET appears from 96 terminal columns on. Turn it
-off with `ping = 0`.
+ping. With the PING and TEMP columns, TARGET appears from 102 terminal
+columns on. Turn PING off with `ping = 0`.
+
+**TEMP column:** the CPU temperature, measured on the server in °C and shown
+in whole degrees (`52°C`, or `126°F` with `temp_unit = f`; `f` in the list
+switches the unit for the session without changing `settings.conf`). Colors
+follow the Celsius value: yellow from 70 °C, red from 85 °C. Only sensors of
+the CPU itself are read:
+
+- Linux: thermal zones of a CPU type (`x86_pkg_temp`, `cpu-thermal`,
+  `soc-thermal`, as on Intel and Raspberry Pi), otherwise the hwmon drivers
+  `coretemp` (package sensor), `k10temp` / `zenpower` (AMD, Tdie before
+  Tctl) and `cpu_thermal`. Other sensors (ACPI, NVMe, Wi-Fi, GPU, mainboard
+  chips, which often report bogus values) are never used.
+- FreeBSD / OPNsense: the hottest core from `dev.cpu.N.temperature`, which
+  needs the `coretemp` or `amdtemp` driver.
+- Otherwise, and for virtual machines without sensors, `-`.
+
+Values outside −40…150 °C are ignored. The detail view shows the
+temperature at the end of the Load line.
 
 ### Status page
 
 The server detail view and `--check` show the same sections in this order:
 
-1. **CPU**, followed by memory, swap and load
+1. **CPU**, followed by memory, swap and load (with the CPU temperature)
 2. **Disks**: usage per mounted filesystem; on FreeBSD each ZFS pool is one
    line (`zroot (zfs)`, used and usable size of the pool, snapshots included),
    because all datasets of a pool share its free space. Repeated mounts of
@@ -287,7 +311,17 @@ The server detail view and `--check` show the same sections in this order:
    block devices are never merged
 3. **Network**: one row per physical interface with a split bar (receive
    rate rx left, transmit rate tx right) and both rates
-4. **Processes**: PID, user, CPU %, memory %, RSS, command
+4. **Processes**, with the total and how many are shown: PID, user, CPU %,
+   memory %, RSS, command
+5. **Docker** (only if the server has a `docker` command), with the count
+   (`4 running / 6 total`) in the heading, then 5 containers in the grid
+   of the process rows: name (as wide as PID and user), CPU %, memory %
+   and memory under the process columns, then status with health (the
+   image after it from 84 columns on). Running containers come first, highest CPU
+   first (equal CPU by name), then running ones without CPU data yet (`…`),
+   then stopped ones by name. The processes are cut to 5 rows
+   then; `p` still shows all of them, `m` all containers. Without Docker
+   the page looks as before
 
 Network rates are megabytes per second (1 MB = 1,000,000 bytes, two
 decimals), averaged over the same 1-second sampling window that is used for
@@ -367,26 +401,104 @@ Interfaces that are physical but down are still listed (with 0.00 MB/s).
 | Server list with add / edit / delete / reorder, group headings, persisted | ✅ |
 | Live status per server (online, CPU %, memory %, load, uptime, OS) | ✅ |
 | Detail view: CPU (user/sys/iowait), memory, swap, load, disks, rx/tx per physical network interface in MB/s, top processes | ✅ |
+| CPU temperature in the list and the detail view (°C/°F) | ✅ |
+| Drive temperature and SMART health (`smartctl`), problems in the list | ✅ (see [Drives](#drives-smart)) |
 | Process list with sorting and SIGTERM | ✅ |
 | Interactive SSH terminal | ✅ (your normal `ssh` in the same terminal window) |
 | Snippets (saved commands) run on a server | ✅ |
 | Jump host / ProxyJump, identity files, `~/.ssh/config` aliases | ✅ |
 | Connection test from the form | ✅ |
-| **Docker** containers (list, logs, start/stop) | ⏳ planned – extension point `lib/modules/` |
+| **Docker** containers, read only: status, health, CPU, memory | ✅ (`m` in the detail view, see [Docker](#docker-read-only)) |
+| Docker actions (logs, start/stop, compose), Podman | ❌ not planned for now |
 | **Kubernetes** pods | ⏳ planned – extension point `lib/modules/` |
 | Historical charts, alerts/notifications, iCloud sync, SFTP | ❌ not planned for now |
 | Password authentication for monitoring | ❌ by design (keys / agent only) |
 
-### Extension point for Docker / pods
+### Docker (read only)
+
+The collector reports whether the server has a `docker` command (it does
+not contact the daemon). If it has, the detail view gets a Docker section
+and `m` offers the Docker view: a table of all containers (`docker ps -a`)
+with name, image, status, health, CPU % and memory (`docker stats
+--no-stream`), running containers first. CPU and memory are shown like in
+the process list (`59.7`, `159.6M`). The detail view uses the same data.
+Docker is asked at most every 15 s, in the background; `docker stats` takes
+1–2 s on the server. Nothing is started, stopped or changed, there is no
+Compose support and no Podman.
+
+Docker prints one JSON object per line; scat reads them without `jq`. Lines
+that are not valid JSON are skipped and counted ("2 unreadable line(s)
+skipped"). Control characters are removed from every value before it is
+shown, like all other remote text.
+
+**Security:** Docker only answers users who may open its socket
+(`/var/run/docker.sock`), usually root or members of the `docker` group.
+Access to that socket is equivalent to root on the server, even if scat only
+reads from it. Only give the SSH user scat logs in with that access if it
+may have root rights anyway. Without access the Docker section shows
+Docker's error ("permission denied … docker.sock").
+
+### Drives (SMART)
+
+The detail view shows a **Drives** section after Disks: one row per disk
+with model, type (HDD, SSD, NVMe), size, temperature and health. A disk
+with a problem also shows in the STATUS column of the server list instead
+of the OS, for example `sdb: 8 pending` (yellow) or `sda: FAILING` (red).
+
+```
+  Drives      2 drives · all OK · as of 15:42
+  DEVICE      MODEL              TYPE   SIZE  TEMP HEALTH DETAIL
+  sda         WDC WD40EFRX-68N   HDD    3.6T  37°C OK     pend 0 · realloc 0
+  nvme0n1     Samsung SSD 980 1… NVMe   931G  47°C OK     used 3% · spare 100%
+```
+
+Health comes from `smartctl -A` alone:
+
+- SATA: **FAIL** if an attribute is failing now; **WARN** if one failed in
+  the past or there are reallocated, pending or uncorrectable sectors
+  (attributes 5, 197, 198).
+- NVMe: **FAIL** on a critical warning or when the spare blocks fall below
+  their threshold; **WARN** from 90 % wear or with media errors.
+- SAS: **WARN** with grown defects.
+
+Temperatures follow `temp_unit` / `f`. Hard disks turn yellow from 50 °C and
+red from 60 °C, SSDs and NVMe from 70 °C and 80 °C.
+
+**Sleeping disks:** reading SMART data wakes a hard disk that has spun
+down. scat asks at most every `drives_refresh` seconds (default 300), in the
+background, and uses `smartctl -n standby`, which leaves a sleeping disk
+alone (shown as `SLEEP`).
+
+**Permissions:** smartctl needs root. scat runs it as root if it logs in as
+root, otherwise through `sudo -n`, which fails instead of asking for a
+password. A sudo rule for exactly these commands is enough (`sudo visudo
+-f /etc/sudoers.d/scat`; use the path `command -v smartctl` shows):
+
+```
+<scat-user> ALL=(root) NOPASSWD: /usr/sbin/smartctl -n standby -A /dev/sd[a-z], \
+    /usr/sbin/smartctl -n standby -A /dev/sd[a-z][a-z], \
+    /usr/sbin/smartctl -n standby -A /dev/nvme[0-9]n[0-9]
+```
+
+If the rule only allows `smartctl -A` (without `-n standby`), scat falls back
+to it and says so in the section ("sleeping disks are woken"); it tries the
+`-n standby` form once per session (and again on `r`), so sudo logs one
+refusal, not one per query. Without any rule the section shows "sudo
+smartctl -A not allowed". Servers without `smartctl` show no section.
+
+Not covered: disks behind USB bridges that need `-d sat` (shown as "not
+readable"), and RAID controllers.
+
+### Extension point for modules
 
 `lib/modules.sh` keeps a small registry. Every `lib/modules/*.sh` file is
 sourced at startup and calls
 `sc_module_register <id> <label> <view-function>`. Registered modules appear
-under `m` in the server detail view. Remote calls go through
-`sc_ssh_run_script`, so they get the same BatchMode, timeouts and connection
-reuse. `lib/modules/docker.sh.example` is a non-functional skeleton (rename it
-to `.sh` to see the wiring), and `lib/modules/README.md` describes the
-contract.
+under `m` in the server detail view; optional hooks add a section to the
+detail view or hide the module for servers it does not apply to. Remote
+calls go through `sc_ssh_run_script`, so they get the same BatchMode,
+timeouts and connection reuse. `lib/modules/docker.sh` is the example, and
+`lib/modules/README.md` describes the contract.
 
 ## Layout
 
@@ -399,10 +511,13 @@ lib/ui.sh               terminal state, keys, differential rendering, widgets
 lib/views.sh            server list, detail, processes, snippets, forms, help
 lib/cli.sh              --list / --check
 lib/modules.sh          module registry (extension point)
-lib/modules/            modules (docker.sh.example skeleton)
+lib/modules/            modules (docker.sh: Docker containers; drives.sh: SMART)
 lib/remote/metrics.sh   POSIX sh collector executed on the server via `sh -s`
+lib/remote/docker.sh    POSIX sh Docker query (docker ps / docker stats)
+lib/remote/drives.sh    POSIX sh drive query (smartctl --scan / -A)
 tests/run_tests.sh      tests for the non-interactive parts
 tests/tui_smoke.exp     expect-driven end-to-end test of the TUI
+tests/fixtures/         docker and smartctl output for the tests
 ```
 
 ## How it works

@@ -17,32 +17,32 @@
 
   // Groups A-Z, servers A-Z within a group, ungrouped last (as scat sorts).
   var SERVERS = [
-    { group: "lab", name: "lab-ci", ping: 2, target: "ci@192.0.2.30:22", os: "Linux 6.8.0", cores: 8,
+    { group: "lab", name: "lab-ci", temp: 67, ping: 2, target: "ci@192.0.2.30:22", os: "Linux 6.8.0", cores: 8,
       cpu: 64, mem: 71, swap: 12, load: 3.10, up: "4d 7h", procs: 241,
       disks: [["/", 39.1, 48], ["/srv/cache", 476, 82]],
       nics: [["eth0", 38.2, 9.6], ["eth1", 0.4, 0.1]],
       top: [["4312", "ci", "build-runner"], ["4398", "ci", "test-worker"], ["1220", "root", "cron"], ["988", "root", "sshd"]] },
-    { group: "lab", name: "lab-edge", ping: 4, target: "192.0.2.31", os: "Linux 6.6.0", cores: 2,
+    { group: "lab", name: "lab-edge", temp: 48, ping: 4, target: "192.0.2.31", os: "Linux 6.6.0", cores: 2,
       cpu: 9, mem: 33, swap: 0, load: 0.21, up: "31d 2h", procs: 96,
       disks: [["/", 14.6, 22]],
       nics: [["eth0", 1.2, 0.8], ["wlan0", 0.1, 0.0]],
       top: [["611", "root", "edge-proxy"], ["702", "nobody", "metrics-agent"], ["455", "root", "sshd"], ["1", "root", "init"]] },
-    { group: "production", name: "db-01", ping: 18, target: "db@203.0.113.20:22", os: "Linux 6.8.0", cores: 16,
+    { group: "production", name: "db-01", temp: 62, ping: 18, target: "db@203.0.113.20:22", os: "Linux 6.8.0", cores: 16,
       cpu: 41, mem: 84, swap: 6, load: 5.42, up: "88d 1h", procs: 312,
       disks: [["/", 39.1, 35], ["/var/lib/db", 953, 61]],
       nics: [["eth0", 22.7, 31.5], ["eth1", 6.3, 6.1]],
       top: [["2201", "db", "db-server"], ["2240", "db", "db-writer"], ["3012", "backup", "dump-job"], ["988", "root", "sshd"]] },
-    { group: "production", name: "web-01", ping: 17, target: "deploy@203.0.113.10:22", os: "Linux 6.8.0", cores: 4,
+    { group: "production", name: "web-01", temp: 55, ping: 17, target: "deploy@203.0.113.10:22", os: "Linux 6.8.0", cores: 4,
       cpu: 23, mem: 46, swap: 2, load: 0.84, up: "12d 3h", procs: 183,
       disks: [["/", 39.1, 41], ["/var", 95.3, 63]],
       nics: [["eth0", 12.4, 31.0], ["eth1", 0.3, 0.2]],
       top: [["1840", "www", "app-server"], ["1903", "www", "app-server"], ["2117", "www", "queue-worker"], ["988", "root", "sshd"]] },
-    { group: "production", name: "web-02", ping: 19, target: "deploy@203.0.113.11:22", os: "Linux 6.8.0", cores: 4,
+    { group: "production", name: "web-02", temp: 58, ping: 19, target: "deploy@203.0.113.11:22", os: "Linux 6.8.0", cores: 4,
       cpu: 37, mem: 52, swap: 2, load: 1.12, up: "12d 3h", procs: 191,
       disks: [["/", 39.1, 44], ["/var", 95.3, 58]],
       nics: [["eth0", 18.9, 47.2], ["eth1", 0.5, 0.3]],
       top: [["1851", "www", "app-server"], ["1877", "www", "app-server"], ["2120", "www", "queue-worker"], ["1220", "root", "cron"]] },
-    { group: "", name: "backup-01", ping: 3, target: "backup@192.0.2.40:22", os: "Linux 6.1.0", cores: 2,
+    { group: "", name: "backup-01", temp: 41, ping: 3, target: "backup@192.0.2.40:22", os: "Linux 6.1.0", cores: 2,
       cpu: 12, mem: 28, swap: 0, load: 0.30, up: "140d 9h", procs: 88,
       disks: [["/", 29.3, 18], ["/backup", 3725, 77]],
       nics: [["eth0", 62.0, 0.9]],
@@ -127,12 +127,15 @@
 
   // state: { view: "list"|"detail", sel: server index, t: seconds on the clock,
   //          live: per-server values {cpu, mem, load, ping, nics:[[rx, tx]]}, pressed: key }
+  // CPU temperature follows the drifting CPU load a little.
+  function tempOf(s, v) { return Math.round(s.temp + (v.cpu - s.cpu) * 0.15); }
+
   function listFrame(st) {
     var rows = [], i, s, r, lastGroup = null, v, g;
     rows.push(header("Servers", SERVERS.length + " servers · " + clock(st.t)));
     r = new Row();
     // At 80 columns scat has no room for the TARGET column (it needs 40 free).
-    r.add("   " + fit("NAME", 16) + " " + right("PING", 7) + " " + right("CPU", 5) + " " + right("MEM", 5) + " " +
+    r.add("   " + fit("NAME", 16) + " " + right("PING", 7) + " " + right("CPU", 5) + " " + right("TEMP", 5) + " " + right("MEM", 5) + " " +
           right("LOAD", 6) + " " + right("UPTIME", 8) + " STATUS", "d");
     rows.push(r.html());
     for (i = 0; i < SERVERS.length; i++) {
@@ -149,7 +152,7 @@
       r.add("●", (on ? cls + " " : "") + "ok");
       r.add(" ", cls);
       r.add(fit(s.name, 16), (cls ? cls + " " : "") + "b");
-      r.add(" " + right(Math.round(v.ping) + " ms", 7) + " " + right(Math.round(v.cpu) + "%", 5) + " " + right(Math.round(v.mem) + "%", 5) + " " +
+      r.add(" " + right(Math.round(v.ping) + " ms", 7) + " " + right(Math.round(v.cpu) + "%", 5) + " " + right(tempOf(s, v) + "°C", 5) + " " + right(Math.round(v.mem) + "%", 5) + " " +
             right(v.load.toFixed(2), 6) + " " + right(s.up, 8) + " ", cls);
       r.add(fit(s.os, COLS - r.len), (cls ? cls + " " : "") + "d");
       rows.push(r.html(cls));
@@ -178,7 +181,7 @@
     rows.push(barLine("Memory", v.mem, size(s.cores * 2 * v.mem / 100) + " / " + size(s.cores * 2)));
     rows.push(barLine("Swap", s.swap, s.swap ? size(2 * s.swap / 100) + " / 2.0G" : "no swap"));
     rows.push(new Row().add("  " + fit("Load", 12), "b").add(v.load.toFixed(2) + " " + (v.load * 0.9).toFixed(2) + " " +
-              (v.load * 0.8).toFixed(2) + "   " + s.procs + " processes").html());
+              (v.load * 0.8).toFixed(2) + "   " + s.procs + " processes \u00b7 CPU " + tempOf(s, v) + "\u00b0C").html());
     rows.push(new Row().html());
     rows.push(new Row().add("  Disks", "b").html());
     for (i = 0; i < 2; i++) {
@@ -198,11 +201,13 @@
       rows.push(r.html());
     }
     rows.push(new Row().html());
-    rows.push(new Row().add("  " + right("PID", 7) + " " + fit("USER", 10) + " " + right("CPU%", 6) + " " +
-              right("MEM%", 6) + " " + right("RSS", 7) + " COMMAND", "b").html());
-    for (i = 0; i < 4; i++) {
+    rows.push(new Row().add("  " + fit("Processes", 12), "b").add(s.procs + " total \u00b7 top 3 by CPU", "d").html());
+    rows.push(new Row().add("  " + fit("PID", 7) + " " + fit("USER", 10) + " " + right("CPU%", 6) + " " +
+              right("MEM%", 6) + " " + right("RSS", 7) + " COMMAND", "d").html());
+    // As many rows as fit at 80x24, like the real view.
+    for (i = 0; i < 3; i++) {
       var p = s.top[i], share = [0.42, 0.27, 0.12, 0.03][i];
-      rows.push(new Row().add("  " + right(p[0], 7) + " " + fit(p[1], 10) + " " + right((v.cpu * share).toFixed(1), 6) + " " +
+      rows.push(new Row().add("  " + fit(p[0], 7) + " " + fit(p[1], 10) + " " + right((v.cpu * share).toFixed(1), 6) + " " +
                 right((v.mem * share / 3).toFixed(1), 6) + " " + right(["412M", "388M", "96.4M", "4.1M"][i], 7) + " " + p[2]).html());
     }
     while (rows.length < ROWS - 2) rows.push(new Row().html());

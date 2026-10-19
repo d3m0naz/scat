@@ -3,7 +3,7 @@
 # and number formatting, input validation and a timeout runner (macOS has no
 # coreutils `timeout`).
 
-SC_VERSION="0.2.2"
+SC_VERSION="0.2.3"
 SC_ERR=
 
 sc_die() {
@@ -47,10 +47,12 @@ sc_glyphs_init() {
     if [[ ${SC_SET[ascii]:-0} == 1 || $charmap != UTF-8 ]]; then
         SC_G_FULL='#' SC_G_EMPTY='.' SC_G_DOT='*' SC_G_HOLLOW='o' SC_G_ELL='~'
         SC_G_SEP='|' SC_G_SEL='>' SC_G_UPDOWN='^v' SC_G_RX='rx' SC_G_TX='tx' SC_G_ENTER='Enter' SC_G_HLINE='-' SC_G_TIMES='x'
+        SC_G_DEG=
         SC_G_EIGHTHS=()
     else
         SC_G_FULL='█' SC_G_EMPTY='░' SC_G_DOT='●' SC_G_HOLLOW='○' SC_G_ELL='…'
         SC_G_SEP='·' SC_G_SEL='▶' SC_G_UPDOWN='↑↓' SC_G_RX='↓' SC_G_TX='↑' SC_G_ENTER='⏎' SC_G_HLINE='─' SC_G_TIMES='×'
+        SC_G_DEG='°'
         # Partial cells for 1/8 .. 7/8 of a cell, indexed by eighths.
         SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
     fi
@@ -118,6 +120,34 @@ sc_expand_path() {
 }
 
 # --- numbers and formatting ---------------------------------------------------
+
+# CPU temperature $1 (degrees C as reported, e.g. "48.5") for display in
+# whole degrees of unit $2 (c|f), rounded half away from zero: "49°C",
+# "119°F" ("49C" without the degree glyph). SC_TEMP_LEVEL gets the colour
+# by the Celsius value: 85 and above critical, 70 and above warning.
+# Status 1 (REPLY "-") for a missing or malformed value.
+sc_fmt_temp() {
+    local t
+    SC_TEMP_LEVEL=
+    if [[ ! $1 =~ ^(-?)([0-9]{1,3})(\.([0-9]))?$ ]]; then
+        REPLY=-
+        return 1
+    fi
+    t=$((10#${BASH_REMATCH[2]} * 10 + 10#${BASH_REMATCH[4]:-0}))
+    [[ -n ${BASH_REMATCH[1]} ]] && t=$((-t))
+    if ((t >= 850)); then
+        SC_TEMP_LEVEL=$C_CRIT
+    elif ((t >= 700)); then
+        SC_TEMP_LEVEL=$C_WARN
+    else
+        SC_TEMP_LEVEL=$C_OK
+    fi
+    # Tenths of a degree in the display unit, then rounded to whole degrees.
+    local unit=C
+    [[ ${2:-c} == f ]] && t=$((t * 9 / 5 + 320)) unit=F
+    if ((t < 0)); then t=$(((t - 5) / 10)); else t=$(((t + 5) / 10)); fi
+    REPLY="$t${SC_G_DEG-}$unit"
+}
 
 # Truncates a decimal like "12.7" to an integer; fails on non-numbers.
 sc_int() {

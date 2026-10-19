@@ -308,8 +308,8 @@ SC_SRV[web2|host]=203.0.113.11
 sc_metrics_load web2 "$TMP/res2"
 out=$(sc_print_summary web2)
 eq "memory used / total" "  Memory    4.2G / 7.8G (54%)" "$(grep Memory <<<"$out")"
-eq "process header aligned" "        PID USER         CPU%   MEM%     RSS COMMAND" "$(grep -m1 'PID' <<<"$out")"
-eq "process row aligned" "     766271 root          3.3    0.1   11.5M sshd-session: pi [priv]" "$(grep -m1 766271 <<<"$out")"
+eq "process header aligned (PID left)" "    PID     USER         CPU%   MEM%     RSS COMMAND" "$(grep -m1 'PID' <<<"$out")"
+eq "process row aligned (PID left)" "    766271  root          3.3    0.1   11.5M sshd-session: pi [priv]" "$(grep -m1 766271 <<<"$out")"
 sc_proc_line "1|u|0.0|0.0|1|$(printf 'x%.0s' {1..100})" 60
 eq "process row width honoured" 60 "${#REPLY}"
 eq "unknown server is an error" "scat: error: unknown server 'nope' (see --list)" "$(sc_cli_check nope 2>&1)"
@@ -320,7 +320,7 @@ section "section order (CPU, Disks, Network, processes)"
 # Renders into stdout instead of the terminal; prints the row of the first
 # line matching each section marker.
 order_of() {
-    awk '/(^|  )CPU /{c=c?c:NR} /Disks|  Disk  /{d=d?d:NR} /Network/{n=n?n:NR} /PID USER/{p=p?p:NR}
+    awk '/(^|  )CPU /{c=c?c:NR} /Disks|  Disk  /{d=d?d:NR} /Network/{n=n?n:NR} /PID +USER/{p=p?p:NR}
          END { print (c && c < d && d < n && n < p) ? "ordered" : "c=" c " d=" d " n=" n " p=" p }'
 }
 SC_G_FULL='█' SC_G_EMPTY='░' SC_G_EIGHTHS=('' '▏' '▎' '▍' '▌' '▋' '▊' '▉')
@@ -533,7 +533,7 @@ SC_SRV[web2|host]=203.0.113.11
 full=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=80; sc_draw_detail web2 | sed $'s/\e\\[[0-9;]*[mK]//g')
 eq "80x24: full detail layout" ordered "$(order_of <<<"$full")"
 eq "80x24: both disks, both interfaces, process rows" "2 2 2" \
-    "$(printf '%s %s %s' "$(grep -c '^  /\(data\)\{0,1\} ' <<<"$full")" "$(grep -c '^  \(eth0\|wlan0\) ' <<<"$full")" "$(grep -c '^ *[0-9]\+ \(root\|www-data\) ' <<<"$full")")"
+    "$(printf '%s %s %s' "$(grep -c '^  /\(data\)\{0,1\} ' <<<"$full")" "$(grep -c '^  \(eth0\|wlan0\) ' <<<"$full")" "$(grep -c '^ *[0-9]\+ \+\(root\|www-data\) ' <<<"$full")")"
 eq "80x24: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$full" | grep -c x)"
 
 section "detail view scrolling (80x24)"
@@ -557,18 +557,18 @@ det() { # scroll [cols] [rows]
     ) | sed $'s/\e\\[[0-9;]*[mK]//g'
 }
 f=$(det 0)
-eq "top: header and title row fixed, indicator 1-21/28" "0 7 1-21/28" "$(tail -n 1 <<<"$f")"
+eq "top: header and title row fixed, indicator 1-21/29" "0 8 1-21/29" "$(tail -n 1 <<<"$f")"
 eq "top: frame is 24 rows" 24 "$(sed '$d' <<<"$f" | wc -l | tr -d ' ')"
-eq "indicator at the right end of the status line" "1-21/28" "$(sed -n 23p <<<"$f" | sed 's/^ *//; s/ *$//')"
+eq "indicator at the right end of the status line" "1-21/29" "$(sed -n 23p <<<"$f" | sed 's/^ *//; s/ *$//')"
 eq "footer fits 80 columns" 1 "$(sed -n 24p <<<"$f" | awk '{ print (length($0) <= 80) }')"
-eq "scrolling up past the top is clamped" "0 7 1-21/28" "$(det -5 | tail -n 1)"
-eq "scrolling down past the end is clamped" "7 7 8-28/28" "$(det 100 | tail -n 1)"
-f=$(det 7)
+eq "scrolling up past the top is clamped" "0 8 1-21/29" "$(det -5 | tail -n 1)"
+eq "scrolling down past the end is clamped" "8 8 9-29/29" "$(det 100 | tail -n 1)"
+f=$(det 8)
 eq "header stays while scrolled" " scat · big" "$(sed -n 1p <<<"$f" | cut -c1-11)"
 eq "end: last process row is the last content row" 1 "$(sed -n 22p <<<"$f" | grep -c 'worker-03')"
-all=$(for p in 0 1 2 3 4 5 6 7; do det "$p" | sed -n '2,22p'; done | sort -u)
+all=$(for p in 0 1 2 3 4 5 6 7 8; do det "$p" | sed -n '2,22p'; done | sort -u)
 eq "max size (6 disks, 6 interfaces): all reachable by scrolling" "6 6 1" \
-    "$(printf '%s %s %s' "$(grep -c '^  /data[1-6] ' <<<"$all")" "$(grep -c '^  eth[0-5] ' <<<"$all")" "$(grep -c 'PID USER' <<<"$all")")"
+    "$(printf '%s %s %s' "$(grep -c '^  /data[1-6] ' <<<"$all")" "$(grep -c '^  eth[0-5] ' <<<"$all")" "$(grep -c 'PID  *USER' <<<"$all")")"
 key() { # start key -> position after the key (clamped by a redraw)
     (
         SC_ROWS=24 SC_COLS=80 SC_DET_SCROLL=$1 SC_KEY=$2
@@ -580,17 +580,17 @@ key() { # start key -> position after the key (clamped by a redraw)
 eq "down: one row" 1 "$(key 0 DOWN)"
 eq "up: one row" 4 "$(key 5 UP)"
 eq "up at the top stays" 0 "$(key 0 UP)"
-eq "down at the end stays" 7 "$(key 7 DOWN)"
-eq "page down: one page (21 rows), clamped at the end" 7 "$(key 0 PGDN)"
-eq "page up: one page, clamped at the top" 0 "$(key 7 PGUP)"
-eq "end / home" "7 0" "$(key 2 END) $(key 5 HOME)"
+eq "down at the end stays" 8 "$(key 8 DOWN)"
+eq "page down: one page (21 rows), clamped at the end" 8 "$(key 0 PGDN)"
+eq "page up: one page, clamped at the top" 0 "$(key 8 PGUP)"
+eq "end / home" "8 0" "$(key 2 END) $(key 5 HOME)"
 eq "other keys are not scroll keys" "unhandled" "$(key 0 p | head -c 9)"
 f=$(sc_ui_render() { :; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=0 SC_KEY=PGDN; sc_draw_detail big; sc_detail_scroll_key; sc_draw_detail big
     SC_ROWS=40; sc_draw_detail big; printf '%s %s %s' "$SC_DET_SCROLL" "$SC_DET_SCROLL_MAX" "${SC_FRAME_STATUS:--}")
 eq "resize to 80x40: position clamped, no overflow, no indicator" "0 0 -" "$f"
 f=$(sc_ui_render() { :; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=7; sc_draw_detail big; SC_ROWS=27; sc_draw_detail big
     printf '%s %s' "$SC_DET_SCROLL" "$SC_DET_SCROLL_MAX")
-eq "resize to 80x27: position clamped to the new end" "4 4" "$f"
+eq "resize to 80x27: position clamped to the new end" "5 5" "$f"
 sc_metrics_load web2 "$TMP/res.full"
 f=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=0; sc_draw_detail web2; printf '%s\n' "${SC_FRAME_STATUS:--}")
 eq "no overflow (2 disks, 2 interfaces): no indicator" - "$(tail -n 1 <<<"$f")"
@@ -797,6 +797,11 @@ hostname() { echo opnsense.test; }
 date() { echo 1760090000; }
 sleep() { echo 2 >"$F/phase"; }
 sysctl() {
+    if [ "$1" = dev.cpu ]; then
+        [ -n "${NO_CORETEMP-}" ] && return 0
+        printf 'dev.cpu.1.temperature: 44.0C\ndev.cpu.1.freq: 1200\ndev.cpu.0.temperature: 43.0C\n'
+        return 0
+    fi
     case $2 in
     kern.cp_time) cat "$F/cp_time.$(cat "$F/phase")" ;;
     kern.boottime) echo '{ sec = 1760000000, usec = 123456 } Thu Oct  9 08:53:20 2025' ;;
@@ -828,10 +833,13 @@ for shell in sh dash; do
     eq "$shell: no stderr output" "" "$(cat "$F/err.$shell")"
 done
 out=$(cat "$F/out.sh")
+eq "FreeBSD: hottest core from dev.cpu.*.temperature" cpu_temp=44.0 "$(grep '^cpu_temp=' <<<"$out")"
+eq "FreeBSD without coretemp/amdtemp: no cpu_temp" "" \
+    "$(NO_CORETEMP=1 sh -c 'F=$1; . "$F/fake.sh"; SCAT_METRICS_LIB=1; . "$2"; bsd_cpu_temp' sh "$F" "$SC_ROOT/lib/remote/metrics.sh")"
 eq "same output from dash" "$out" "$(cat "$F/out.dash" 2>/dev/null || cat "$F/out.sh")"
 eq "system lines" $'os=FreeBSD\nhostname=opnsense.test\nkernel=15.1-RELEASE-p4\ndistro=FreeBSD 15.1-RELEASE-p4\nuptime=90000\nload=0.12 0.20 0.25\ncores=4' \
     "$(sed -n 1,7p <<<"$out")"
-eq "cpu from kern.cp_time over 1 s" $'cpu_busy=75.0\ncpu_user=50.0\ncpu_sys=25.0' "$(grep '^cpu_' <<<"$out")"
+eq "cpu from kern.cp_time over 1 s" $'cpu_busy=75.0\ncpu_user=50.0\ncpu_sys=25.0' "$(grep -E '^cpu_(busy|user|sys)=' <<<"$out")"
 eq "network: only NICs with a dev.<driver>.<unit> node" $'netif=vtnet0|12500000|250000\nnetif=em0|2000|500' "$(grep '^netif=' <<<"$out")"
 eq "no net_note when NICs are found" "" "$(grep '^net_note=' <<<"$out")"
 eq "memory: free + inactive pages are available" $'mem_total=8388608\nmem_used=3145728' "$(grep '^mem_' <<<"$out")"
@@ -956,16 +964,16 @@ sc_runtime_cleanup
 sc_list_build
 pingcol() { cut -c 21-27 <<<"$1" | sed -n "$2"p; } # frame row -> PING cell
 frame=$(list_frame 24 80 0 0)
-eq "header: PING right-aligned after NAME" "   NAME                PING   CPU   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
+eq "header: PING right-aligned after NAME" "   NAME                PING   CPU  TEMP   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
 eq "cell: reply time" "   3 ms" "$(pingcol "$frame" 3)"
 eq "cell: behind a jump host" "   jump" "$(pingcol "$frame" 4)"
 eq "cell: unknown host" "      !" "$(pingcol "$frame" 5)"
 eq "cell: not measured yet" "      …" "$(pingcol "$frame" 6)"
 eq "80 columns with PING: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$frame" | grep -c x)"
 eq "unknown host is shown in the error color" 1 "$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=80; sc_draw_servers 0 0 | grep -cF "$C_CRIT      !")"
-eq "TARGET column from 96 columns on (95: none)" "1 0" "$(list_frame 24 96 0 0 | sed -n 2p | grep -c TARGET) $(list_frame 24 95 0 0 | sed -n 2p | grep -c TARGET)"
+eq "TARGET column from 102 columns on (101: none)" "1 0" "$(list_frame 24 102 0 0 | sed -n 2p | grep -c TARGET) $(list_frame 24 101 0 0 | sed -n 2p | grep -c TARGET)"
 frame=$(SC_SET[ping]=0; list_frame 24 80 0 0)
-eq "ping = 0: no PING column" "   NAME               CPU   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
+eq "ping = 0: no PING column" "   NAME               CPU  TEMP   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
 
 eq "ping defaults to 1" 1 "${SC_SET[ping]}"
 printf '[settings]\nping = 0\ngroup_headings = 0\n' >"$TMP/ping.conf"
@@ -976,6 +984,583 @@ eq "invalid values: warnings, defaults kept" "1 1|settings.conf:2: ping must be 
     "$(SC_SETTINGS_FILE=$TMP/ping.conf; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s %s|%s|%s' "${SC_SET[ping]}" "${SC_SET[group_headings]}" "${SC_CONFIG_WARNINGS[@]}")"
 eq "settings.conf template documents both" 2 "$(sc_config_emit_default_settings | grep -cE '^# (ping|group_headings) = 1$')"
 
+# ------------------------------------------------------------------------------
+section "CPU temperature (collector with fake /sys, display, key f)"
+eq "temp_unit defaults to c" c "${SC_SET[temp_unit]}"
+# Fake /sys trees after real hosts: $1 = directory, then "zone TYPE MILLI"
+# and "hwmon NAME LABEL MILLI" entries (LABEL - for none).
+fakesys() {
+    local d=$1 kind a b c z=0 h=0 hd last=
+    shift
+    mkdir -p "$d/thermal" "$d/hwmon"
+    for e in "$@"; do
+        read -r kind a b c <<<"$e"
+        if [[ $kind == zone ]]; then
+            mkdir -p "$d/thermal/thermal_zone$z"
+            printf '%s\n' "$a" >"$d/thermal/thermal_zone$z/type"
+            printf '%s\n' "$b" >"$d/thermal/thermal_zone$z/temp"
+            ((z++))
+        else
+            [[ $a != "$last" ]] && { hd=$d/hwmon/hwmon$h; ((h++)); mkdir -p "$hd"; printf '%s\n' "$a" >"$hd/name"; last=$a; }
+            n=$(ls "$hd" | grep -c '_input$'); n=$((n + 1))
+            printf '%s\n' "$c" >"$hd/temp${n}_input"
+            [[ $b != - ]] && printf '%s\n' "${b//_/ }" >"$hd/temp${n}_label"
+        fi
+    done
+}
+ltemp() { # dir -> collector output
+    SCAT_METRICS_LIB=1 sh -c '. "$1"; SYS_THERMAL=$2/thermal SYS_HWMON=$2/hwmon; linux_cpu_temp' sh "$SC_ROOT/lib/remote/metrics.sh" "$1"
+}
+T=$TMP/temp
+fakesys "$T/pi" "zone cpu-thermal 35300" "hwmon cpu_thermal - 35850" "hwmon nvme Composite 26850" "hwmon rp1_adc - 42689"
+eq "Raspberry Pi: cpu-thermal zone" cpu_temp=35.3 "$(ltemp "$T/pi")"
+fakesys "$T/intel" "zone acpitz 44000" "zone SEN1 26850" "zone INT3400_Thermal 20000" "zone TCPU 49000" "zone x86_pkg_temp 49000" \
+    "hwmon acpitz - 44000" "hwmon coretemp Package_id_0 48000" "hwmon coretemp Core_0 48000" \
+    "hwmon nct6796 AUXTIN1 107000" "hwmon nct6796 AUXTIN3 -13000"
+eq "Intel: x86_pkg_temp zone, not acpitz or bogus mainboard sensors" cpu_temp=49.0 "$(ltemp "$T/intel")"
+fakesys "$T/ryzen" "zone iwlwifi_1 44000" "hwmon nvme Composite 47850" "hwmon amdgpu edge 52000" \
+    "hwmon k10temp Tctl 42000" "hwmon iwlwifi_1 - 44000"
+eq "Ryzen: k10temp Tctl, not the wifi zone, nvme or GPU" cpu_temp=42.0 "$(ltemp "$T/ryzen")"
+fakesys "$T/zen" "hwmon k10temp Tctl 52000" "hwmon k10temp Tdie 42000"
+eq "k10temp: Tdie preferred over Tctl" cpu_temp=42.0 "$(ltemp "$T/zen")"
+fakesys "$T/cores" "hwmon coretemp Core_0 50000" "hwmon coretemp Core_1 55000"
+eq "coretemp without package sensor: hottest core" cpu_temp=55.0 "$(ltemp "$T/cores")"
+fakesys "$T/twopkg" "hwmon coretemp Package_id_0 48000" "hwmon coretemp2 x 0"
+mkdir -p "$T/twopkg/hwmon/hwmon9"; echo coretemp >"$T/twopkg/hwmon/hwmon9/name"
+echo 61000 >"$T/twopkg/hwmon/hwmon9/temp1_input"; echo "Package id 1" >"$T/twopkg/hwmon/hwmon9/temp1_label"
+eq "two CPU packages: the hotter one" cpu_temp=61.0 "$(ltemp "$T/twopkg")"
+fakesys "$T/vps"
+eq "no sensors (VPS): nothing" "" "$(ltemp "$T/vps")"
+fakesys "$T/bogus" "zone x86_pkg_temp 200000" "zone cpu-thermal -50000"
+eq "values outside -40..150 C are dropped" "" "$(ltemp "$T/bogus")"
+fakesys "$T/other" "zone acpitz 44000" "hwmon nct6796 SYSTIN 33000"
+eq "only non-CPU sensors: nothing" "" "$(ltemp "$T/other")"
+eq "no /sys at all: nothing, no error" "" "$(ltemp "$T/missing" 2>&1)"
+assert "collector run (local) emits at most one cpu_temp" test "$(grep -c '^cpu_temp=' "$TMP/local.out")" -le 1
+
+ft() { sc_fmt_temp "$@"; printf '%s' "$REPLY"; }
+SC_G_DEG='°'
+eq "display: whole degrees C, rounded" "49°C 35°C 0°C -13°C" "$(ft 48.5 c) $(ft 35.3 c) $(ft -0.4 c) $(ft -12.6 c)"
+eq "display: Fahrenheit converted only for display" "119°F 120°F 96°F 31°F" "$(ft 48.5 f) $(ft 49.0 f) $(ft 35.3 f) $(ft -0.4 f)"
+eq "display: ASCII without degree sign" "49C 120F" "$(SC_G_DEG=; ft 49.0 c) $(SC_G_DEG=; ft 49.0 f)"
+eq "display: missing or malformed value" "- - -" "$(ft '' c) $(ft abc c) $(ft '1e3' f)"
+lvl() { sc_fmt_temp "$1" "$2"; case $SC_TEMP_LEVEL in "$C_CRIT") echo crit ;; "$C_WARN") echo warn ;; *) echo ok ;; esac; }
+eq "colour by the Celsius value: <70 ok, 70-84.9 warn, 85+ crit (also in F)" "ok warn warn crit crit" \
+    "$( (C_OK=o C_WARN=w C_CRIT=c; printf '%s ' "$(lvl 69.9 c)" "$(lvl 70.0 c)" "$(lvl 84.9 f)" "$(lvl 85.0 c)" "$(lvl 90 f)") | sed 's/ $//')"
+
+# List: TEMP right after CPU, 5 wide; 80 columns exactly. Own servers in a
+# subshell (hot: 49 C, cool: no sensor), so the other tests keep theirs.
+tlist() { # cols -> uncolored frame
+    (
+        SC_SERVERS=(hot cool) SC_LIST_KIND=() SC_LIST_VAL=()
+        for n in hot cool; do SC_SRV[$n|host]=$n.invalid SC_SRV[$n|group]= SC_SRV[$n|jump]=; done
+        SC_M[hot|rc]=0 SC_M[hot|cpu_busy]=18 SC_M[hot|mem_total]=100 SC_M[hot|mem_used]=31 SC_M[hot|load]="0.35 0.6 0.7"
+        SC_M[hot|uptime]=443000 SC_M[hot|distro]="Debian GNU/Linux 13 (trixie)" SC_M[hot|cpu_temp]=49.0
+        SC_M[cool|rc]=0 SC_M[cool|cpu_busy]=1 SC_M[cool|mem_total]=100 SC_M[cool|mem_used]=17 SC_M[cool|load]=0.00
+        SC_M[cool|uptime]=60 SC_M[cool|distro]=CachyOS
+        SC_PING[hot]="5 ms" SC_PING[cool]=-
+        SC_G_DEG='°'
+        sc_list_build 0
+        list_frame 24 "$1" 0 0
+    )
+}
+frame=$(tlist 80)
+eq "list header with TEMP after CPU" "   NAME                PING   CPU  TEMP   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
+eq "list row: 49°C under TEMP, STATUS 18 wide" "▶● hot                 5 ms   18%  49°C   31%   0.35    5d 3h Debian GNU/Linux …" "$(sed -n 3p <<<"$frame")"
+eq "server without sensor: -" " ● cool                   -    1%     -   17%   0.00       1m CachyOS" "$(sed -n 4p <<<"$frame" | sed 's/ *$//')"
+eq "list rows exactly 80 wide" 0 "$(sed -n '2,4p;23,24p' <<<"$frame" | while IFS= read -r l; do ((${#l} != 80)) && echo x; done | grep -c x)"
+cp "$SC_SETTINGS_FILE" "$TMP/settings.before-f"
+sc_list_toggle_temp
+eq "f: unit F for the session, message" "f Temperature in °F" "${SC_SET[temp_unit]} $REPLY"
+eq "f: list shows Fahrenheit" "▶● hot                 5 ms   18% 120°F   31%" "$(l=$(tlist 80 | sed -n 3p); printf '%s' "${l%%31%*}31%")"
+assert "f: settings.conf stays byte for byte the same" cmp -s "$TMP/settings.before-f" "$SC_SETTINGS_FILE"
+sc_list_toggle_temp
+eq "f again: back to C" "c Temperature in °C" "${SC_SET[temp_unit]} $REPLY"
+assert "f again: settings.conf still unchanged" cmp -s "$TMP/settings.before-f" "$SC_SETTINGS_FILE"
+printf '[settings]\ntemp_unit = f\n' >"$TMP/settings.f"
+eq "temp_unit = f is read as the start value" f "$(SC_SETTINGS_FILE=$TMP/settings.f; sc_config_load_settings; printf '%s' "${SC_SET[temp_unit]}")"
+printf '[settings]\ntemp_unit = kelvin\n' >"$TMP/settings.k"
+eq "invalid temp_unit: warning, default kept" "c settings.conf:2: temp_unit must be one of: c, f (got 'kelvin')" \
+    "$(SC_SETTINGS_FILE=$TMP/settings.k SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s %s' "${SC_SET[temp_unit]}" "${SC_CONFIG_WARNINGS[0]}")"
+eq "settings template documents temp_unit" 1 "$(sc_config_emit_default_settings | grep -c '^# temp_unit = c$')"
+eq "f is not in the list footer (help only)" 0 "$(tlist 80 | sed -n 24p | grep -c ' f ')"
+help=$(sc_view_pager() { printf '%s\n' "${SC_PAGER_LINES[@]}"; }; SC_G_DEG='°'; sc_view_help)
+eq "help explains f" 1 "$(grep -c '^  f  temperature in °C / °F for this session (start value: temp_unit)$' <<<"$help")"
+SC_M[web1|rc]=0 SC_M[web1|ts]=1 SC_M[web1|os]=Linux SC_M[web1|proc_count]=379 SC_M[web1|load]="0.35 0.6 0.7"
+SC_M[web1|cpu_temp]=49.0
+eq "detail: temperature at the end of the Load line" "  Load        0.35 0.6 0.7   379 processes · CPU 49°C" \
+    "$(SC_G_DEG='°'; sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=80; sc_draw_detail web1 | sed $'s/\e\\[[0-9;]*[mK]//g' | grep '^  Load' | sed 's/ *$//')"
+unset 'SC_M[web1|cpu_temp]'
+eq "detail without sensor: Load line as before" "  Load        0.35 0.6 0.7   379 processes" \
+    "$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=80; sc_draw_detail web1 | sed $'s/\e\\[[0-9;]*[mK]//g' | grep '^  Load' | sed 's/ *$//')"
+sc_metrics_clear web1
+
+# ------------------------------------------------------------------------------
+section "docker module (read only; fixtures in tests/fixtures)"
+# shellcheck source=/dev/null
+source "$SC_ROOT/lib/modules/docker.sh"
+FX=$SC_ROOT/tests/fixtures
+SC_G_SEP='·' SC_G_ELL='…' SC_G_SEL='▶'
+# A fake docker in PATH answers from the fixtures; FAKEDOCKER_FAIL=1 makes
+# it fail like a user without access to the socket.
+mkdir -p "$TMP/fakedocker"
+cat >"$TMP/fakedocker/docker" <<EOF
+#!/bin/sh
+if [ -n "\${FAKEDOCKER_FAIL-}" ]; then
+    echo "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" >&2
+    exit 1
+fi
+case \$1 in
+    ps) [ "\$*" = "ps -a --format {{json .}}" ] && cat "$FX/docker-ps.jsonl" ;;
+    stats) [ "\$*" = "stats --no-stream --format {{json .}}" ] && cat "$FX/docker-stats.jsonl" ;;
+    *) echo "unexpected docker \$*" >&2; exit 2 ;;
+esac
+EOF
+chmod +x "$TMP/fakedocker/docker"
+dq() { # mode [PATH] -> output of lib/remote/docker.sh
+    { printf 'MODE=%s\n' "$1"; cat "$SC_ROOT/lib/remote/docker.sh"; } | PATH=${2:-$TMP/fakedocker:/usr/bin:/bin} sh -s
+}
+out=$(dq full)
+eq "remote: docker=1 first" docker=1 "$(head -n 1 <<<"$out")"
+eq "remote: one ps= line per non-empty docker ps line" 8 "$(grep -c '^ps=' <<<"$out")"
+eq "remote: stats= lines with MODE=full" 5 "$(grep -c '^stats=' <<<"$out")"
+eq "remote: no stats with MODE=ps" "8 0" "$(dq ps | grep -c '^ps=') $(dq ps | grep -c '^stats=')"
+eq "remote: only docker= and ps=/stats= lines" "" "$(grep -Ev '^(docker|ps|stats)=' <<<"$out")"
+eq "remote: docker ps failure gives ps_err, nothing else" "docker=1
+ps_err=permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" \
+    "$(FAKEDOCKER_FAIL=1 dq full)"
+if (PATH=/usr/bin:/bin:/usr/local/bin:/snap/bin:/usr/sbin:/sbin; command -v docker) >/dev/null 2>&1; then
+    ok "remote: docker=0 not testable here (docker is installed)"
+else
+    eq "remote: docker=0 without a docker command" docker=0 "$(dq full /usr/bin:/bin)"
+fi
+eq "collector: docker=1 with a docker command" docker=1 \
+    "$(PATH=$TMP/fakedocker:/usr/bin:/bin SCAT_METRICS_LIB=1 sh -c '. "$1"; docker_present' sh "$SC_ROOT/lib/remote/metrics.sh")"
+if ! (PATH=/usr/bin:/bin:/usr/local/bin:/snap/bin; command -v docker) >/dev/null 2>&1; then
+    eq "collector: docker=0 without" docker=0 \
+        "$(PATH=/usr/bin:/bin SCAT_METRICS_LIB=1 sh -c '. "$1"; docker_present' sh "$SC_ROOT/lib/remote/metrics.sh")"
+fi
+assert "collector run emits docker=" grep -Eq '^docker=[01]$' "$TMP/local.out"
+
+un() { mod_docker_unescape "$1"; printf '%s' "$REPLY"; }
+eq "unescape: \\u003c \\u003e \\u0026" "<a>&b" "$(un '<a>&b')"
+eq "unescape: quote, backslash, slash" 'say "hi" \ /' "$(un 'say \"hi\" \\ \/')"
+eq "unescape: control and non-ASCII escapes" "a?b?c d" "$(un 'a\u001bb\u00e9c\nd')"
+fld() { mod_docker_field "$1" "$2" && printf '%s' "$REPLY" || printf '<missing>'; }
+eq "field: a key inside an escaped label value does not count" "db" \
+    "$(fld "$(sed -n 2p "$FX/docker-ps.jsonl")" Names)"
+eq "field: missing key" "<missing>" "$(fld '{"Image":"x"}' Names)"
+eq "field: '|' replaced" "a/b" "$(fld '{"Names":"a|b"}' Names)"
+
+{ printf 'rc=0\nts=1760000000\nmode=full\n'; dq full; } >"$TMP/dk.full"
+mod_docker_load web2 "$TMP/dk.full"
+eq "counts: running / total / skipped lines" "4 5 4" \
+    "${MOD_DOCKER[web2|running]} ${MOD_DOCKER[web2|total]} ${MOD_DOCKER[web2|bad]}"
+eq "rows: running first, by name; health split off; stats joined by ID" \
+"cache/x|redis:7|running|Up 5 minutes|starting|-|-|-
+db|postgres:16|running|Up 3 days||2.7|1.2|48.0M
+web|nginx:1.27|running|Up 2 weeks|healthy|0.2|0.4|12.3M
+worker|shop/worker:latest|running|Up 5 days|unhealthy|97.0|20.0|786M
+old-job|busybox?[31mRED?[0m|exited|Exited (0) 5 days ago||-|-|-" "${MOD_DOCKER[web2|rows]}"
+eq "no control characters in stored rows" 0 "$(LC_ALL=C grep -c '[[:cntrl:]]' <<<"${MOD_DOCKER[web2|rows]}")"
+eq "state derived from the status when State is missing" running "$(grep '^cache' <<<"${MOD_DOCKER[web2|rows]}" | cut -d'|' -f3)"
+eq "rows_cpu (detail order): running by CPU, then without stats, then stopped" "worker db web cache/x old-job" \
+    "$(cut -d'|' -f1 <<<"${MOD_DOCKER[web2|rows_cpu]}" | tr '\n' ' ' | sed 's/ $//')"
+# Equal CPU, CPU above 100 %, a running container without stats, two stopped.
+{
+    printf 'rc=0\nts=1\nmode=full\ndocker=1\n'
+    for c in z-stop:exited:00a a-stop:exited:00b b-eq:running:001 a-eq:running:002 hot:running:003 low:running:004 nostats:running:005; do
+        IFS=: read -r n st id <<<"$c"
+        printf 'ps={"ID":"000000000%s","Image":"img","Names":"%s","State":"%s","Status":"x"}\n' "$id" "$n" "$st"
+    done
+    printf 'stats={"ID":"000000000%s","CPUPerc":"%s","MemUsage":"1MiB / 2GiB","Name":"x"}\n' 001 5.00% 002 5.00% 003 120.50% 004 0.10%
+} >"$TMP/dk.order"
+mod_docker_load web2 "$TMP/dk.order"
+eq "detail order: CPU desc, equal CPU by name, no stats after, stopped last by name" "hot a-eq b-eq low nostats a-stop z-stop" \
+    "$(cut -d'|' -f1 <<<"${MOD_DOCKER[web2|rows_cpu]}" | tr '\n' ' ' | sed 's/ $//')"
+eq "Docker view order unchanged: running first, by name" "a-eq b-eq hot low nostats a-stop z-stop" \
+    "$(cut -d'|' -f1 <<<"${MOD_DOCKER[web2|rows]}" | tr '\n' ' ' | sed 's/ $//')"
+mod_docker_load web2 "$TMP/dk.full"
+mod_docker_summary web2
+eq "summary line" "4 running / 5 total · 4 unreadable line(s) skipped" "$REPLY"
+{ printf 'rc=0\nts=1\nmode=ps\n'; FAKEDOCKER_FAIL=1 dq ps; } >"$TMP/dk.denied"
+mod_docker_load web2 "$TMP/dk.denied"
+mod_docker_summary web2
+eq "socket permission error: no counts, message shown" "- permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" \
+    "${MOD_DOCKER[web2|total]:--} $REPLY"
+printf 'rc=0\nts=1\nmode=ps\ndocker=0\n' >"$TMP/dk.none"
+mod_docker_load web2 "$TMP/dk.none"
+mod_docker_summary web2
+eq "docker=0 answer" "no docker command on the server" "$REPLY"
+printf 'rc=124\nts=1\nmode=full\nerr=timed out after 20s\n' >"$TMP/dk.timeout"
+mod_docker_load web2 "$TMP/dk.timeout"
+mod_docker_summary web2
+eq "ssh error" "timed out after 20s" "$REPLY"
+printf 'rc=0\nts=1\nmode=ps\ndocker=1\n' >"$TMP/dk.empty"
+mod_docker_load web2 "$TMP/dk.empty"
+mod_docker_summary web2
+eq "no containers" "0 running / 0 total" "$REPLY"
+
+# Detail view of a server with docker=1 / docker=0 (20 processes each).
+dkres() { # docker value
+    printf 'rc=0\nts=1\nos=Linux\nhostname=dock\ncpu_busy=5\nmem_total=4000000\nmem_used=1000000\nswap_total=0\nload=0 0 0\n'
+    [[ -n $1 ]] && printf 'docker=%s\n' "$1"
+    for i in {1..20}; do printf 'proc=%d|root|%d.0|0.1|1000|p%02d\n' $((200 + i)) $((21 - i)) "$i"; done
+}
+dkdet() { # cols rows -> uncolored detail frame
+    (
+        sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+        SC_COLS=$1 SC_ROWS=$2 SC_DET_SCROLL=0
+        sc_draw_detail dock
+    ) | sed $'s/\e\\[[0-9;]*[mK]//g'
+}
+SC_SRV[dock|host]=dock.invalid
+dkres 1 >"$TMP/dock.res"; sc_metrics_load dock "$TMP/dock.res"
+eq "docker=1 is kept from the collector" 1 "${SC_M[dock|docker]}"
+mod_docker_load dock "$TMP/dk.full"
+f=$(dkdet 80 60)
+eq "detail with docker: 5 process rows" 5 "$(grep -c '^  2[0-9][0-9] \+root ' <<<"$f")"
+eq "detail with docker: heading after the processes" "  Docker      4 running / 5 total · 4 unreadable line(s) skipped" \
+    "$(grep -A2 ' p05 *$' <<<"$f" | sed -n 3p | sed 's/ *$//')"
+eq "detail with docker: containers by CPU" "worker db web cache/x old-job" \
+    "$(sed -n '/^  NAME  /,$p' <<<"$f" | sed -n '2,6p' | awk '{ printf "%s%s", (NR > 1 ? " " : ""), $1 }')"
+eq "detail with docker: column header (no IMAGE at 80 columns)" "  NAME                 CPU%   MEM%     MEM STATUS" \
+    "$(grep '^  NAME ' <<<"$f" | sed 's/ *$//')"
+eq "detail with docker: container row with CPU and memory" "  worker               97.0   20.0    786M Up 5 days (unhealthy)" \
+    "$(grep '^  worker ' <<<"$f" | sed 's/ *$//')"
+eq "detail with docker: stopped container without stats" "  old-job                 -      -       - Exited (0) 5 days ago" \
+    "$(grep '^  old-job ' <<<"$f" | sed 's/ *$//')"
+eq "detail with docker: IMAGE column from 84 columns" "  worker               97.0   20.0    786M Up 5 days (unhealthy)    shop/worker:latest" \
+    "$(dkdet 100 60 | grep '^  worker ' | sed 's/ *$//')"
+eq "detail with docker: no IMAGE at 83 columns" "" "$(dkdet 83 60 | grep '^  NAME .*IMAGE')"
+col() { # header-line word -> "start end" (0-based)
+    local l=$1 w=$2 pre
+    pre=${l%%"$w"*}
+    printf '%s %s' "${#pre}" $((${#pre} + ${#w} - 1))
+}
+eq "detail at 84 columns: STATUS as wide as the longest shown status (23), then 2 spaces" \
+    "  cache/x                 -      -       - Up 5 minutes (starting)  redis:7" \
+    "$(dkdet 84 60 | grep '^  cache/x ' | sed 's/ *$//')"
+eq "detail at 84 columns: IMAGE header above the images" "$(dkdet 84 60 | grep '^  NAME ' | grep -o '^.*IMAGE' | wc -c)" \
+    "$(dkdet 84 60 | grep '^  cache/x ' | grep -o '^.*redis' | wc -c)"
+# Short statuses only: the column shrinks to them.
+{
+    printf 'rc=0\nts=1\nmode=full\ndocker=1\n'
+    printf 'ps={"ID":"00000000000%d","Image":"%s","Names":"%s","State":"running","Status":"Up 3 days"}\n' 1 nginx:1.27 web 2 postgres:16 db
+} >"$TMP/dk.short"
+mod_docker_load dock "$TMP/dk.short"
+f=$(dkdet 100 60)
+eq "short statuses: header STATUS + 2 spaces + IMAGE" "  NAME                 CPU%   MEM%     MEM STATUS     IMAGE" "$(grep '^  NAME ' <<<"$f" | sed 's/ *$//')"
+eq "short statuses: image 2 spaces after the status" "  web                     …      …       … Up 3 days  nginx:1.27" "$(grep '^  web ' <<<"$f" | sed 's/ *$//')"
+eq "short statuses at 80 columns: no IMAGE" "" "$(dkdet 80 60 | grep -c 'nginx' | grep -v '^0$')"
+# A status longer than 24 characters: the column stays at 24.
+{
+    printf 'rc=0\nts=1\nmode=full\ndocker=1\n'
+    printf 'ps={"ID":"000000000001","Image":"img:1","Names":"flaky","State":"restarting","Status":"Restarting (1) 5 seconds ago"}\n'
+} >"$TMP/dk.long"
+mod_docker_load dock "$TMP/dk.long"
+eq "long status: column capped at 24, then 2 spaces" "  flaky                   -      -       - Restarting (1) 5 second…  img:1" "$(dkdet 100 60 | grep '^  flaky ' | sed 's/ *$//')"
+for c in 80 84 100; do
+    f=$(dkdet "$c" 60)
+    eq "$c columns: STATUS starts under COMMAND, no row wider than $c" "$(col "$(grep '^  PID ' <<<"$f")" COMMAND | cut -d' ' -f1) 0" \
+        "$(col "$(grep '^  NAME ' <<<"$f")" STATUS | cut -d' ' -f1) $(while IFS= read -r l; do ((${#l} > c)) && echo x; done <<<"$f" | grep -c x)"
+done
+mod_docker_load dock "$TMP/dk.full"
+f=$(dkdet 80 60)
+eq "detail rows fit 80 columns" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$f" | grep -c x)"
+# Shared grid: CPU%, MEM% and RSS/MEM end in the same column, STATUS starts
+# where COMMAND does, PID and NAME start together.
+ph=$(grep '^  PID ' <<<"$f") dh=$(grep '^  NAME ' <<<"$f")
+eq "grid: PID and NAME start in column 2" "2 2" "$(col "$ph" PID | cut -d' ' -f1) $(col "$dh" NAME | cut -d' ' -f1)"
+eq "grid: CPU% in the same columns" "$(col "$ph" CPU%)" "$(col "$dh" CPU%)"
+eq "grid: MEM% in the same columns" "$(col "$ph" MEM%)" "$(col "$dh" MEM%)"
+eq "grid: RSS and MEM end in the same column" "$(col "$ph" RSS | cut -d' ' -f2)" "$(col "$dh" ' MEM ' | cut -d' ' -f2 | awk '{ print $1 - 1 }')"
+eq "grid: COMMAND and STATUS start in the same column" "$(col "$ph" COMMAND | cut -d' ' -f1)" "$(col "$dh" STATUS | cut -d' ' -f1)"
+eq "grid: values right-aligned under the headers" "$(col "$ph" CPU% | cut -d' ' -f2) $(col "$ph" CPU% | cut -d' ' -f2)" \
+    "$(l=$(grep '^  201 ' <<<"$f"); pre=${l%%20.0*}; echo $((${#pre} + 3))) $(l=$(grep '^  worker ' <<<"$f"); pre=${l%%97.0*}; echo $((${#pre} + 3)))"
+eq "process heading" "  Processes   ? total · top 5 by CPU" "$(grep '^  Processes' <<<"$f" | sed 's/ *$//')"
+# Colours as in a real terminal for the style checks (the tests run without).
+saved_colors=("$C_DIM" "$C_BOLD" "$C_NORM" "$C_CRIT" "$C_WARN" "$C_RESET")
+C_DIM=$'\e[2m' C_BOLD=$'\e[1m' C_NORM=$'\e[22;39m' C_CRIT=$'\e[31m' C_WARN=$'\e[33m' C_RESET=$'\e[0m'
+raw=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=60 SC_DET_SCROLL=0; sc_draw_detail dock)
+eq "column headers dimmed in both sections" "2" "$(grep -c "^${C_DIM//[/\\[}  \(PID\|NAME\) " <<<"$raw")"
+eq "headings: label bold, note dimmed, same in both" "2" "$(grep -c "^  ${C_BOLD//[/\\[}\(Processes\|Docker\) *${C_NORM//[/\\[}${C_DIM//[/\\[}" <<<"$raw")"
+eq "unhealthy: only the status cell red, numbers plain" "  worker               97.0   20.0    786M ${C_CRIT}Up 5 days (unhealthy)" \
+    "$(grep 'worker' <<<"$raw" | sed "s/${C_NORM//[/\\[}.*//")"
+eq "stopped container: whole row dimmed" 1 "$(grep -c "^${C_DIM//[/\\[}  old-job " <<<"$raw")"
+eq "running container: no row colour" 1 "$(grep -c '^  db  ' <<<"$raw")"
+eq "process rows: no colour" 5 "$(grep -c '^  2[0-9][0-9] ' <<<"$raw")"
+hp=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24; sc_sort_procs dock cpu; sc_draw_processes dock 0 0 cpu | sed -n 2p)
+eq "process view (p): same dimmed header as the detail view" "$(grep "PID " <<<"$raw")" "$hp"
+eq "process view (p): PID left" "▶ 201     root" "$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24; sc_sort_procs dock cpu; sc_draw_processes dock 0 0 cpu | sed -n 3p | sed $'s/\e\\[[0-9;]*m//g' | cut -c1-14)"
+C_DIM=${saved_colors[0]} C_BOLD=${saved_colors[1]} C_NORM=${saved_colors[2]} C_CRIT=${saved_colors[3]} C_WARN=${saved_colors[4]} C_RESET=${saved_colors[5]}
+pc() { mod_docker_pct "$1" && printf '%s' "$REPLY" || printf '<bad>'; }
+eq "docker CPU% like ps: one decimal, rounded" "59.7 0.2 0.0 100.0 312.4 <bad> <bad>" "$(pc 59.65%) $(pc 0.15%) $(pc 0.00%) $(pc 100%) $(pc 312.449%) $(pc 'x%') $(pc '--')"
+sz() { mod_docker_size "$1" && printf '%s' "$REPLY" || printf '<bad>'; }
+eq "docker memory like RSS (sc_fmt_kib)" "159M 48.0M 1011M 1.5G 7.5M 500K <bad> <bad>" "$(sz 159.6MiB) $(sz 48.1MiB) $(sz 1011MiB) $(sz 1.5GiB) $(sz 7.594MiB) $(sz 512kB) $(sz bogus) $(sz '1e9GiB')"
+f=$(dkdet 80 24)
+eq "detail with docker at 80x24: scrolls to the containers" 1 "$( (sc_ui_render() { :; }; SC_COLS=80 SC_ROWS=24 SC_DET_SCROLL=0; sc_draw_detail dock; ((SC_DET_SCROLL_MAX > 0)) && echo 1))"
+{ printf 'rc=0\nts=1\nmode=ps\ndocker=1\n'; for i in {1..11}; do printf 'ps={"ID":"%012d","Image":"img","Names":"c%02d","State":"running","Status":"Up 1 hour"}\n' "$i" "$i"; done; } >"$TMP/dk.many"
+mod_docker_load dock "$TMP/dk.many"
+f=$(dkdet 80 60)
+eq "detail: at most 5 containers, then a hint" "5 1" "$(grep -c '^  c[0-9][0-9] ' <<<"$f") $(grep -c '^  … 6 more: m for the Docker view' <<<"$f")"
+eq "detail: ps-only result (no stats yet): by name, CPU/MEM shown as …" "c01 c02 c03 c04 c05" \
+    "$(grep -o '^  c[0-9][0-9]' <<<"$f" | tr -d ' ' | tr '\n' ' ' | sed 's/ $//')"
+eq "detail: running container from a result without stats shows …" "  c01                     …      …       … Up 1 hour" \
+    "$(grep '^  c01 ' <<<"$f" | sed 's/ *$//')"
+mod_docker_load dock "$TMP/dk.denied"
+eq "detail: docker error in the count line" 1 "$(dkdet 80 60 | grep -c '^  Docker      permission denied')"
+unset 'MOD_DOCKER[dock|rc]'
+eq "detail: before the first answer" 1 "$(dkdet 80 60 | grep -c '^  Docker      loading…')"
+dkres "" >"$TMP/dock.res"; sc_metrics_load dock "$TMP/dock.res"; plain=$(dkdet 80 60)
+dkres 0 >"$TMP/dock.res"; sc_metrics_load dock "$TMP/dock.res"; f=$(dkdet 80 60)
+eq "docker=0: detail view unchanged" "$plain" "$f"
+eq "docker=0: processes fill the screen, no Docker section" "0 1" "$(grep -c Docker <<<"$f") $(($(grep -c '^  2[0-9][0-9] \+root ' <<<"$f") > 5))"
+sc_modules_for dock
+eq "docker=0: not offered under m, with reason" "0 Docker: no docker command on dock" "${#SC_MODULES_AVAIL[@]} $REPLY"
+dkres 1 >"$TMP/dock.res"; sc_metrics_load dock "$TMP/dock.res"
+sc_modules_for dock
+eq "docker=1: offered under m" docker "${SC_MODULES_AVAIL[*]}"
+SC_M[dock|rc]=255
+sc_modules_for dock
+eq "offline: not offered" "0 Docker: dock is not online" "${#SC_MODULES_AVAIL[@]} $REPLY"
+SC_M[dock|rc]=0
+
+# Module view at 80x24.
+mod_docker_load dock "$TMP/dk.full"
+f=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24 SC_MSG=
+    mapfile -t MOD_DOCKER_ROWS <<<"${MOD_DOCKER[dock|rows]}"; mod_docker_draw dock 0 0 | sed $'s/\e\\[[0-9;]*[mK]//g')
+eq "view: 24 rows, none wider than 80" "24 0" "$(wc -l <<<"$f" | tr -d ' ') $(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$f" | grep -c x)"
+eq "view: header with counts" " scat · dock · docker" "$(sed -n 1p <<<"$f" | sed 's/ *4\/5 running *$//')"
+eq "view: column header" "  NAME              IMAGE              STATUS           HEALTH      CPU%     MEM" "$(sed -n 2p <<<"$f")"
+eq "view: row with CPU and memory" "  worker            shop/worker:latest Up 5 days        unhealthy   97.0    786M" "$(grep '^  worker' <<<"$f")"
+eq "view: skipped lines in the status line" " 4 unreadable line(s) skipped" "$(sed -n 23p <<<"$f" | sed 's/  *as of.*//')"
+eq "view: footer without actions" " ↑↓ move  r refresh  esc back" "$(sed -n 24p <<<"$f" | sed 's/ *$//')"
+mod_docker_load dock "$TMP/dk.empty"
+f=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_COLS=80 SC_ROWS=24 MOD_DOCKER_ROWS=(); mod_docker_draw dock 0 0 | sed $'s/\e\\[[0-9;]*[mK]//g')
+eq "view: no containers" "  No containers on this server." "$(sed -n 3p <<<"$f" | sed 's/ *$//')"
+
+# Background query and pickup, with ssh replaced by a local sh.
+sc_runtime_init
+(
+    sc_ssh_run_script() { PATH=$TMP/fakedocker:/usr/bin:/bin sh -s <"$3" >"$4" 2>"$5"; }
+    mod_docker_async dock full && echo started >"$TMP/dk.started"
+    for _ in {1..50}; do mod_docker_poll && break; sleep 0.1; done
+    printf '%s %s %s' "${MOD_DOCKER[dock|mode]-}" "${MOD_DOCKER[dock|total]-}" "${MOD_DOCKER[dock|stats]-}" >"$TMP/dk.async"
+)
+eq "async query delivers a full result" "full 5 1" "$(cat "$TMP/dk.async")"
+(
+    mod_docker_async() { echo "$1 $2" >>"$TMP/dk.ticks"; MOD_DOCKER_LAST[$1]=$EPOCHSECONDS; }
+    MOD_DOCKER_LAST=()
+    mod_docker_detail_tick dock; mod_docker_detail_tick dock
+    mod_docker_detail_refresh dock; mod_docker_detail_tick dock
+    SC_M[dock|docker]=0 MOD_DOCKER_LAST=(); mod_docker_detail_tick dock
+)
+eq "detail tick: full query (with stats) every 15 s, r forces one, none with docker=0" "dock full
+dock full" "$(cat "$TMP/dk.ticks")"
+(
+    sc_ssh_run_script() { sleep 30; }
+    mod_docker_async dock ps
+    pid=${MOD_DOCKER_PID[dock]}
+    sc_runtime_cleanup
+    sleep 0.3
+    kill -0 "$pid" 2>/dev/null && echo running || echo stopped
+) >"$TMP/dk.cleanup"
+eq "cleanup stops a running query" stopped "$(cat "$TMP/dk.cleanup")"
+grep -q 'kill\|rm \|restart\|start\|stop\|pull\|compose\|exec' <(grep -v '^#' "$SC_ROOT/lib/remote/docker.sh" | grep -o 'docker [a-z]*\|query [a-z]* [a-z]*' | sort -u | grep -v 'query ps ps\|query stats stats\|docker "\$@"') &&
+    nok "remote script only runs docker ps and docker stats" || ok "remote script only runs docker ps and docker stats"
+
+# ------------------------------------------------------------------------------
+section "drives module (SMART, read only; fixtures in tests/fixtures/drives)"
+# shellcheck source=/dev/null
+source "$SC_ROOT/lib/modules/drives.sh"
+DFX=$SC_ROOT/tests/fixtures/drives
+DR=$TMP/drives
+mkdir -p "$DR/bin" "$DR/dev" "$DR/sys"
+# Fake smartctl: --scan from $DR/scan, -A from $DR/<dev>.txt; a disk with
+# $DR/<dev>.asleep answers -n standby like a sleeping disk.
+cat >"$DR/bin/smartctl" <<'EOF'
+#!/bin/sh
+[ "$1" = --scan ] && { cat "$DR/scan"; exit 0; }
+standby=0
+[ "$1" = -n ] && { standby=1; shift 2; }
+[ "$1" = -A ] || exit 2
+d=${2##*/}
+if [ $standby = 1 ] && [ -e "$DR/$d.asleep" ]; then cat "$DFX/standby.txt"; exit 2; fi
+[ -e "$DR/$d.asleep" ] && echo "woke $d" >>"$DR/woken"
+cat "$DR/$d.txt" 2>/dev/null || { echo "Smartctl open device: $2 failed: No such device"; exit 2; }
+EOF
+# Fake sudo -n: FAKESUDO_DENY refuses everything, FAKESUDO_NOSTANDBY only
+# the -n standby form; every call is logged.
+cat >"$DR/bin/sudo" <<'EOF'
+#!/bin/sh
+echo "$*" >>"$DR/sudo.log"
+[ "$1" = -n ] && shift
+[ -n "${FAKESUDO_DENY-}" ] && { echo "sudo: a password is required" >&2; exit 1; }
+case "$*" in *"-n standby"*) [ -n "${FAKESUDO_NOSTANDBY-}" ] && { echo "sudo: a password is required" >&2; exit 1; } ;; esac
+exec "$@"
+EOF
+chmod +x "$DR/bin/smartctl" "$DR/bin/sudo"
+fakedisk() { # name model rotational sectors fixture
+    mkdir -p "$DR/sys/$1/device" "$DR/sys/$1/queue"
+    printf '%s\n' "$2" >"$DR/sys/$1/device/model"
+    printf '%s\n' "$3" >"$DR/sys/$1/queue/rotational"
+    printf '%s\n' "$4" >"$DR/sys/$1/size"
+    cp "$DFX/$5.txt" "$DR/$1.txt"
+}
+fakedisk sda "WDC WD40EFRX-68N  " 1 7814037168 sata-ok
+fakedisk sdb "ST18000NM000J-2TV" 1 35156656128 sata-pending
+fakedisk sdc "ST18000NM000J-2TV" 1 35156656128 sata-ok
+touch "$DR/sdc.asleep"
+fakedisk nvme0n1 "Samsung SSD 980 1TB" 0 1953525168 nvme-ok
+printf '/dev/sda -d scsi # /dev/sda, SCSI device\n/dev/sdb -d scsi # /dev/sdb, SCSI device\n/dev/sdc -d scsi # /dev/sdc, SCSI device\n/dev/nvme0 -d nvme # /dev/nvme0, NVMe device\n' >"$DR/scan"
+drq() { # [NOSTANDBY] -> output of lib/remote/drives.sh as a non-root user
+    { [[ -n ${1-} ]] && echo NOSTANDBY=1; cat "$SC_ROOT/lib/remote/drives.sh"; } |
+        DR=$DR DFX=$DFX DRIVES_OS=Linux SYS_BLOCK=$DR/sys DEV_DIR=$DR/dev PATH=$DR/bin:/usr/bin:/bin sh -s
+}
+rm -f "$DR/sudo.log" "$DR/woken"
+out=$(drq)
+eq "remote: drives=1, one drive= line per disk, nvme0 as nvme0n1" "drives=1
+drive=/dev/sda|WDC WD40EFRX-68N|HDD|4000787030016|ok
+drive=/dev/sdb|ST18000NM000J-2TV|HDD|18000207937536|ok
+drive=/dev/sdc|ST18000NM000J-2TV|HDD|18000207937536|standby
+drive=/dev/nvme0n1|Samsung SSD 980 1TB|NVMe|1000204886016|ok" "$(grep -v '^smart=' <<<"$out")"
+eq "remote: smartctl lines prefixed per disk (non-empty lines)" "13 0 16" \
+    "$(grep -c '^smart=/dev/sda|' <<<"$out") $(grep -c '^smart=/dev/sdc|' <<<"$out") $(grep -c '^smart=/dev/nvme0n1|' <<<"$out")"
+eq "remote: asked with sudo -n and -n standby" "4 4" "$(grep -c '^-n smartctl -n standby -A /dev/' "$DR/sudo.log") $(wc -l <"$DR/sudo.log" | tr -d ' ')"
+eq "remote: the sleeping disk was not woken" "" "$(cat "$DR/woken" 2>/dev/null)"
+rm -f "$DR/sudo.log" "$DR/woken"
+out=$(FAKESUDO_NOSTANDBY=1 drq)
+eq "remote: -n standby refused -> asked without, access=wakes" "wakes wakes wakes wakes" \
+    "$(grep '^drive=' <<<"$out" | awk -F'|' '{ printf "%s ", $5 }' | sed 's/ $//')"
+eq "remote: the refused form is tried only once per run" "1" "$(grep -c -- '-n standby' "$DR/sudo.log")"
+eq "remote: without -n standby the sleeping disk is woken" "woke sdc" "$(cat "$DR/woken")"
+rm -f "$DR/sudo.log" "$DR/woken"
+out=$(FAKESUDO_NOSTANDBY=1 drq nostandby)
+eq "remote: NOSTANDBY=1 from the last run: no refused call at all" "0 4" "$(grep -c -- '-n standby' "$DR/sudo.log") $(wc -l <"$DR/sudo.log" | tr -d ' ')"
+rm -f "$DR/sudo.log"
+out=$(FAKESUDO_DENY=1 drq)
+eq "remote: no sudo rule -> denied, no smart lines, sudo asked twice in total" "denied denied denied denied|0|2" \
+    "$(grep '^drive=' <<<"$out" | awk -F'|' '{ printf "%s ", $5 }' | sed 's/ $//')|$(grep -c '^smart=' <<<"$out")|$(wc -l <"$DR/sudo.log" | tr -d ' ')"
+eq "remote: drives=0 without smartctl" drives=0 "$({ cat "$SC_ROOT/lib/remote/drives.sh"; } | PATH=/usr/bin:/bin sh -s 2>&1 | grep -v '^$')"
+
+pd() { # kind fixture -> "temp|health|detail|short"
+    mod_drives_parse "$1" "$(cat "$DFX/$2.txt")"
+    printf '%s|%s|%s|%s' "$P_TEMP" "$P_HEALTH" "$P_DETAIL" "$P_SHORT"
+}
+SC_G_SEP='·'
+eq "parse SATA ok" "37|OK|pend 0 · realloc 0|" "$(pd HDD sata-ok)"
+eq "parse SATA pending sectors: WARN, temp from '52 (Min/Max ...)'" "52|WARN|pend 8 · realloc 0|8 pending" "$(pd HDD sata-pending)"
+eq "parse SATA FAILING_NOW: FAIL" "61|FAIL|attribute failing · pend 0 · realloc 2048|FAILING" "$(pd HDD sata-failing)"
+eq "parse SATA SSD: temperature from attribute 190" "34|OK|realloc 0|" "$(pd SSD ssd-airflow)"
+eq "parse NVMe ok" "47|OK|used 3% · spare 100%|" "$(pd NVMe nvme-ok)"
+eq "parse NVMe worn (92% used, media errors): WARN" "72|WARN|media err 3 · used 92% · spare 100%|92% used" "$(pd NVMe nvme-worn)"
+eq "parse NVMe critical warning: FAIL" "81|FAIL|used 40% · spare 5%|critical" "$(pd NVMe nvme-critical)"
+eq "parse SAS grown defects: WARN" "34|WARN|defects 12|12 defects" "$(pd HDD sas-defects)"
+eq "parse unreadable (USB bridge)" "|?||" "$(pd HDD usb-unknown)"
+
+# Loading a result: counts, rows, the remembered -n standby refusal.
+{ printf 'rc=0\nts=1760000000\n'; drq; } >"$TMP/dr.res"
+SC_SRV[dock|host]=dock.invalid
+mod_drives_load dock "$TMP/dr.res"
+eq "load: counts n/warn/fail/sleep/denied/wakes" "4 1 0 1 0 0" \
+    "${MOD_DRIVES[dock|n]} ${MOD_DRIVES[dock|warn]} ${MOD_DRIVES[dock|fail]} ${MOD_DRIVES[dock|sleep]} ${MOD_DRIVES[dock|denied]} ${MOD_DRIVES[dock|wakes]}"
+eq "load: rows" "sda|WDC WD40EFRX-68N|HDD|4000787030016|ok|37|OK|pend 0 · realloc 0|
+sdb|ST18000NM000J-2TV|HDD|18000207937536|ok|52|WARN|pend 8 · realloc 0|8 pending
+sdc|ST18000NM000J-2TV|HDD|18000207937536|standby||SLEEP|standby, not woken|
+nvme0n1|Samsung SSD 980 1TB|NVMe|1000204886016|ok|47|OK|used 3% · spare 100%|" "${MOD_DRIVES[dock|rows]}"
+printf 'rc=0\nts=1\ndrives=1\ndrive=/dev/sda|M|HDD|1|ok\nsmart=/dev/sda|Temperature:   \e[31m47 Celsius\nsmart=/dev/sdz|x\ndrive=/dev/../etc|x|x|1|ok\n' >"$TMP/dr.evil"
+mod_drives_load dock "$TMP/dr.evil"
+eq "load: control characters removed, unknown and odd devices ignored" "1 0" \
+    "${MOD_DRIVES[dock|n]} $(LC_ALL=C grep -c '[[:cntrl:]]' <<<"${MOD_DRIVES[dock|rows]}")"
+{ printf 'rc=0\nts=1\n'; FAKESUDO_NOSTANDBY=1 drq; } >"$TMP/dr.wakes"
+unset 'MOD_DRIVES_NOSTANDBY[dock]'
+mod_drives_load dock "$TMP/dr.wakes"
+eq "load: a refused -n standby is remembered for the next run" "4 1" "${MOD_DRIVES[dock|wakes]} ${MOD_DRIVES_NOSTANDBY[dock]-}"
+sc_runtime_init
+eq "next run sends NOSTANDBY=1" "NOSTANDBY=1" "$( (sc_ssh_run_script() { head -n 1 "$3" >"$4"; }; mod_drives_fetch dock "$TMP/dr.f"; sed -n 3p "$TMP/dr.f") )"
+mod_drives_detail_refresh dock
+eq "r in the detail view tries -n standby again" "" "${MOD_DRIVES_NOSTANDBY[dock]-}"
+
+# Detail view: "Drives" right after Disks.
+drdet() { # cols -> uncolored frame of server "dock"
+    (
+        sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+        SC_COLS=$1 SC_ROWS=80 SC_DET_SCROLL=0 SC_G_DEG='°' SC_G_SEP='·'
+        sc_draw_detail dock
+    ) | sed $'s/\e\\[[0-9;]*[mK]//g'
+}
+{
+    printf 'rc=0\nts=1\nos=Linux\nhostname=dock\ncpu_busy=5\nmem_total=4000000\nmem_used=1000000\nswap_total=0\nload=0 0 0\n'
+    printf 'disk=/|50000000|20000000|40\nnetif=eth0|1000|2000\nproc=1|root|1.0|0.1|1000|init\n'
+} >"$TMP/dock.res"; sc_metrics_load dock "$TMP/dock.res"
+mod_drives_load dock "$TMP/dr.res"
+f=$(drdet 80)
+eq "detail: Drives after Disks, before Network" "Disks Drives Network" "$(grep -oE '^  (Disks|Drives|Network)' <<<"$f" | tr -d ' ' | paste -sd ' ' -)"
+eq "detail: heading with counts" "  Drives      4 drives · 1 warning · 1 asleep · as of $(printf '%(%H:%M)T' 1760000000)" "$(grep '^  Drives' <<<"$f" | sed 's/ *$//')"
+eq "detail: column header" "  DEVICE      MODEL              TYPE   SIZE  TEMP HEALTH DETAIL" "$(grep '^  DEVICE' <<<"$f" | sed 's/ *$//')"
+eq "detail: drive rows" "  sda         WDC WD40EFRX-68N   HDD    3.6T  37°C OK     pend 0 · realloc 0
+  sdb         ST18000NM000J-2TV  HDD   16.3T  52°C WARN   pend 8 · realloc 0
+  sdc         ST18000NM000J-2TV  HDD   16.3T     - SLEEP  standby, not woken
+  nvme0n1     Samsung SSD 980 1… NVMe   931G  47°C OK     used 3% · spare 100%" "$(grep -A4 '^  DEVICE' <<<"$f" | sed 1d | sed 's/ *$//')"
+eq "detail: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$f" | grep -c x)"
+eq "detail: MODEL starts in the bar column of the Disks rows" "$(l=$(grep '^  / ' <<<"$f"); pre=${l%%[█░#.]*}; echo ${#pre})" "$(l=$(grep '^  DEVICE' <<<"$f"); pre=${l%%MODEL*}; echo ${#pre})"
+mod_drives_load dock "$TMP/dr.wakes"
+eq "detail: hint when -n standby is not allowed" 1 "$(drdet 80 | grep -c '^  sudo does not allow -n standby: sleeping disks are woken (see README)')"
+{ printf 'rc=0\nts=1\n'; FAKESUDO_DENY=1 drq; } >"$TMP/dr.denied"
+mod_drives_load dock "$TMP/dr.denied"
+eq "detail: without permission one dimmed line" "  Drives      sudo smartctl -A not allowed (see README)|0" \
+    "$(drdet 80 | grep '^  Drives' | sed 's/ *$//')|$(drdet 80 | grep -c '^  DEVICE')"
+printf 'rc=0\nts=1\ndrives=0\n' >"$TMP/dr.none"
+mod_drives_load dock "$TMP/dr.none"
+eq "detail: no smartctl -> no section" 0 "$(drdet 80 | grep -c 'Drives')"
+eq "detail: drives = 0 -> no section" 0 "$(SC_SET[drives]=0; mod_drives_load dock "$TMP/dr.res"; drdet 80 | grep -c 'Drives')"
+mod_drives_load dock "$TMP/dr.res"
+f=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; C_WARN=$'\e[33m' C_CRIT=$'\e[31m' C_DIM=$'\e[2m' C_NORM=$'\e[22;39m' C_OK=$'\e[32m' C_RESET=$'\e[0m'
+    SC_COLS=80 SC_ROWS=80 SC_G_DEG='°'; sc_draw_detail dock)
+eq "colours: WARN yellow, HDD at 52 C yellow (from 50), sleeping row dim" "1 1 1" \
+    "$(grep -c $'\e\\[33mWARN' <<<"$f") $(grep -c $'\e\\[33m 52°C' <<<"$f") $(grep -c $'^\e\\[2m  sdc ' <<<"$f")"
+
+# Server list: a WARN/FAIL replaces the OS text.
+SC_M[dock|distro]="Debian GNU/Linux 13"
+ls_status() { sc_server_cells dock; printf '%s|%s' "$CELL_INFO" "$([[ $CELL_INFO_C == "$C_CRIT" && -n $C_CRIT ]] && echo red || { [[ $CELL_INFO_C == "$C_WARN" && -n $C_WARN ]] && echo yellow || echo other; })"; }
+eq "list: WARN in yellow instead of the OS" "sdb: 8 pending|yellow" "$(C_WARN=w C_CRIT=c; ls_status)"
+printf 'rc=0\nts=1\ndrives=1\ndrive=/dev/sda|M|HDD|1|ok\ndrive=/dev/sdb|M|HDD|1|ok\ndrive=/dev/nvme0n1|M|NVMe|1|ok\n' >"$TMP/dr.bad"
+sed 's|^|smart=/dev/sda\||' "$DFX/sata-failing.txt" >>"$TMP/dr.bad"
+sed 's|^|smart=/dev/sdb\||' "$DFX/sata-pending.txt" >>"$TMP/dr.bad"
+sed 's|^|smart=/dev/nvme0n1\||' "$DFX/nvme-worn.txt" >>"$TMP/dr.bad"
+mod_drives_load dock "$TMP/dr.bad"
+eq "list: FAIL wins, in red, +N for more drives" "sda: FAILING +2|red" "$(C_WARN=w C_CRIT=c; ls_status)"
+mod_drives_load dock "$TMP/dr.denied"
+eq "list: no problem -> OS text" "Debian GNU/Linux 13|other" "$(C_WARN=w C_CRIT=c; ls_status)"
+eq "list: status fits the 18-character column" "sda: FAILING +2" "$(mod_drives_load dock "$TMP/dr.bad"; sc_fit "$(C_WARN=w C_CRIT=c; sc_server_cells dock; printf '%s' "$CELL_INFO")" 18; printf '%s' "${REPLY% *}" | sed 's/ *$//')"
+
+# Background query and cadence.
+(
+    sc_ssh_run_script() { DR=$DR DFX=$DFX DRIVES_OS=Linux SYS_BLOCK=$DR/sys DEV_DIR=$DR/dev PATH=$DR/bin:/usr/bin:/bin sh -s <"$3" >"$4" 2>"$5"; }
+    MOD_DRIVES_LAST=()
+    mod_drives_async dock
+    for _ in {1..50}; do mod_drives_poll && break; sleep 0.1; done
+    printf '%s %s' "${MOD_DRIVES[dock|rc]-}" "${MOD_DRIVES[dock|n]-}" >"$TMP/dr.async"
+)
+eq "async query delivers the result" "0 4" "$(cat "$TMP/dr.async")"
+(
+    mod_drives_async() { echo "$1" >>"$TMP/dr.ticks"; MOD_DRIVES_LAST[$1]=$EPOCHSECONDS; }
+    MOD_DRIVES_LAST=() SC_SERVERS=(dock)
+    mod_drives_list_tick; mod_drives_list_tick; mod_drives_detail_tick dock
+    mod_drives_detail_refresh dock; mod_drives_detail_tick dock
+    SC_M[dock|rc]=255 MOD_DRIVES_LAST=(); mod_drives_list_tick
+    SC_M[dock|rc]=0 SC_SET[drives]=0 MOD_DRIVES_LAST=(); mod_drives_list_tick
+)
+eq "cadence: once per drives_refresh, r forces one, none offline or with drives = 0" "dock
+dock" "$(cat "$TMP/dr.ticks")"
+eq "drives_refresh defaults to 300 s, limits 60-3600" "300 60 3600" "${SC_SET[drives_refresh]} ${SC_SET_LIMITS[drives_refresh]}"
+eq "settings template documents drives and drives_refresh" 2 "$(sc_config_emit_default_settings | grep -cE '^# (drives = 1|drives_refresh = 300)$')"
+eq "no entry under m (hooks only)" "docker" "$(SC_M[dock|docker]=1; sc_modules_for dock; printf '%s' "${SC_MODULES_AVAIL[*]}")"
+grep -E 'smartctl ' "$SC_ROOT/lib/remote/drives.sh" | grep -v '^ *#' | grep -oE 'smartctl -[A-Za-z-]+( [a-z]+)?( -A)?' | sort -u | grep -vxE 'smartctl --scan|smartctl -n standby -A|smartctl -A' &&
+    nok "remote script only runs smartctl --scan, -A and -n standby -A" || ok "remote script only runs smartctl --scan, -A and -n standby -A"
+sc_runtime_cleanup
+sc_metrics_clear dock
 # ------------------------------------------------------------------------------
 section "version consistency (scat, website, installer)"
 site=$SC_ROOT/docs/index.html

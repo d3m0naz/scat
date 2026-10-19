@@ -1,0 +1,8 @@
+{"Command":"\"/docker-entrypoint.…\"","CreatedAt":"2026-10-01 10:00:00 +0200 CEST","ID":"3f2a9c1b7d4e","Image":"nginx:1.27","Labels":"maintainer=NGINX Docker Maintainers <docker-maint@nginx.com>","LocalVolumes":"0","Mounts":"","Names":"web","Networks":"bridge","Ports":"0.0.0.0:8080->80/tcp","RunningFor":"2 weeks ago","Size":"0B","State":"running","Status":"Up 2 weeks (healthy)"}
+{"Command":"\"docker-entrypoint.s…\"","CreatedAt":"2026-10-02 09:00:00 +0200 CEST","ID":"a1b2c3d4e5f6","Image":"postgres:16","Labels":"com.docker.compose.project=shop,evil=\"Names\":\"fake\"","LocalVolumes":"1","Mounts":"pgdata","Names":"db","Networks":"shop_default","Ports":"5432/tcp","RunningFor":"2 weeks ago","Size":"0B","State":"running","Status":"Up 3 days"}
+WARNING: this line is not JSON
+{"Command":"\"/app/worker\"","CreatedAt":"2026-10-03 08:00:00 +0200 CEST","ID":"0badc0ffee00","Image":"shop/worker:latest","Labels":"","LocalVolumes":"0","Mounts":"","Names":"worker","Networks":"shop_default","Ports":"","RunningFor":"5 days ago","Size":"0B","State":"running","Status":"Up 5 days (unhealthy)"}
+{"Names":"broken","Image":"truncated
+{"Command":"\"/bin/sh -c ./job\"","CreatedAt":"2026-10-04 07:00:00 +0200 CEST","ID":"deadbeef0001","Image":"busybox\u001b[31mRED\u001b[0m","Labels":"","LocalVolumes":"0","Mounts":"","Names":"old-job","Networks":"bridge","Ports":"","RunningFor":"5 days ago","Size":"0B","State":"exited","Status":"Exited (0) 5 days ago"}
+{"ID":"c0ffee000002","Image":"redis:7","Names":"cache|x","Status":"Up 5 minutes (health: starting)"}
+{}

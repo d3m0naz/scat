@@ -14,6 +14,8 @@ export PATH
 
 NET_DEV=/proc/net/dev
 SYS_NET=/sys/class/net
+SYS_THERMAL=/sys/class/thermal
+SYS_HWMON=/sys/class/hwmon
 
 linux_cpu_sample() {
     awk '/^cpu /{print $2, $3, $4, $5, $6, $7, $8, $9; exit}' /proc/stat
@@ -199,6 +201,91 @@ print_procs() {
     }' | sort -t'|' -k3,3 -rn | head -n 100
 }
 
+# cpu_temp=<degrees C, one decimal> from the highest of the values given as
+# arguments after the scale $1 (1000 for millidegrees); values outside
+# -40..150 C are dropped. Prints nothing without a usable value.
+print_cpu_temp() {
+    awk -v s="$1" 'BEGIN {
+        for (i = 2; i < ARGC; i++) {
+            v = ARGV[i]
+            if (v !~ /^-?[0-9]+(\.[0-9]+)?$/) continue
+            v = v / s
+            if (v < -40 || v > 150) continue
+            if (!n++ || v > m) m = v
+        }
+        if (n) printf "cpu_temp=%.1f\n", m
+    }' "$@"
+}
+
+# Millidegree values of the hwmon sensors in directory $1 whose label starts
+# with $2 (all sensors if $2 is empty), one per line.
+hwmon_temps() {
+    for t in "$1"/temp*_input; do
+        [ -r "$t" ] || continue
+        if [ -n "$2" ]; then
+            label=$(cat "${t%_input}_label" 2>/dev/null)
+            case $label in "$2"*) ;; *) continue ;; esac
+        fi
+        cat "$t" 2>/dev/null
+    done
+}
+
+# CPU temperature on Linux, only from sensors known to measure the CPU:
+# 1. thermal zones of a CPU type (Intel package, Raspberry Pi and other SoCs);
+# 2. hwmon drivers of the CPU: coretemp (package sensors, else all cores),
+#    k10temp / zenpower (Tdie, else Tctl, else all), cpu_thermal.
+# Other zones and chips (acpitz, nvme, wifi, GPU, mainboard sensors, which
+# often report bogus values) are never used.
+linux_cpu_temp() {
+    vals=
+    for z in "$SYS_THERMAL"/thermal_zone*; do
+        [ -r "$z/temp" ] || continue
+        case $(cat "$z/type" 2>/dev/null) in
+        x86_pkg_temp | cpu-thermal | cpu_thermal | soc-thermal | soc_thermal)
+            vals="$vals $(cat "$z/temp" 2>/dev/null)" ;;
+        esac
+    done
+    if [ -z "${vals# }" ]; then
+        for h in "$SYS_HWMON"/hwmon*; do
+            [ -r "$h/name" ] || continue
+            case $(cat "$h/name" 2>/dev/null) in
+            coretemp)
+                v=$(hwmon_temps "$h" "Package id")
+                [ -n "$v" ] || v=$(hwmon_temps "$h" "")
+                ;;
+            k10temp | zenpower)
+                v=$(hwmon_temps "$h" Tdie)
+                [ -n "$v" ] || v=$(hwmon_temps "$h" Tctl)
+                [ -n "$v" ] || v=$(hwmon_temps "$h" "")
+                ;;
+            cpu_thermal) v=$(hwmon_temps "$h" "") ;;
+            *) continue ;;
+            esac
+            vals="$vals $v"
+        done
+    fi
+    # shellcheck disable=SC2086 # one argument per value
+    print_cpu_temp 1000 $vals
+}
+
+# CPU temperature on FreeBSD: the hottest core from coretemp / amdtemp
+# (dev.cpu.N.temperature, e.g. "44.0C"); nothing without such a driver.
+bsd_cpu_temp() {
+    # shellcheck disable=SC2046
+    print_cpu_temp 1 $(sysctl dev.cpu 2>/dev/null |
+        sed -n 's/^dev\.cpu\.[0-9]*\.temperature: *\(-\{0,1\}[0-9.]*\)C$/\1/p')
+}
+
+# docker=1 if a docker client is installed, else docker=0. The daemon is not
+# contacted here; the Docker module queries it separately.
+docker_present() {
+    if (PATH=$PATH:/usr/local/bin:/snap/bin; command -v docker) >/dev/null 2>&1; then
+        echo docker=1
+    else
+        echo docker=0
+    fi
+}
+
 # Only collect when run as the script, not when sourced by the tests.
 [ -n "${SCAT_METRICS_LIB-}" ] && return 0
 
@@ -236,6 +323,7 @@ Linux)
             100 * (d[3] + d[6] + d[7]) / t, 100 * d[5] / t, 100 * d[8] / t
     }'
     print_netifs "$n1" "$n2" 1
+    linux_cpu_temp
 
     awk '/^MemTotal:/ {t = $2} /^MemAvailable:/ {a = $2; has = 1}
         /^MemFree:/ {f = $2} /^Buffers:/ {b = $2} /^Cached:/ {c = $2}
@@ -283,6 +371,7 @@ FreeBSD)
     c2=$(bsd_cpu_sample)
     n2=$(netstat -ibnW 2>/dev/null | netstat_link_counters)
     bsd_cpu_print "$c1" "$c2"
+    bsd_cpu_temp
     print_netifs "$(pick_ifaces "$phys" "$n1")" "$(pick_ifaces "$phys" "$n2")" 1
     bsd_mem
     bsd_swap
@@ -302,6 +391,7 @@ esac
 # The disk filter locates the "NN%" column so names with spaces still parse.
 df -P -k 2>/dev/null | print_disks "${zfs_pools-}"
 
+docker_present
 echo "proc_count=$(ps -A -o pid= 2>/dev/null | wc -l | tr -d ' ')"
 ps -A -o pid= -o user= -o pcpu= -o pmem= -o rss= -o comm= 2>/dev/null | print_procs "$os"
 

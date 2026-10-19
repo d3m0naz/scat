@@ -5,7 +5,10 @@
 # were restored. Two more runs show a grouped list with and without group
 # headings (group_headings); the first also toggles them with t (no effect
 # in the detail view; on the list only for the session, settings.conf stays
-# the same).
+# the same). The last run replaces ssh with a local `sh -s` and docker with
+# the test fixtures: Docker section in the detail view, the read-only Docker
+# view under m, and a server without docker (no module offered); smartctl
+# answers from the drive fixtures (warning in the list, Drives section).
 # Usage: tests/tui_smoke.exp <config-dir>
 
 set timeout 15
@@ -32,6 +35,7 @@ set stty_init "rows 24 columns 80"
 spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/scat' --config-dir '$cfg' --theme high-contrast; echo EXIT=\$?; stty -g > '$stty_file.after'"
 
 want "PING" "PING column in the list header"
+want "TEMP" "TEMP column in the list header"
 want "No servers yet" "empty server list shown"
 send "a"
 want "Add server" "add form opened"
@@ -43,7 +47,8 @@ send "192.0.2.1\r"
 want "Default: 22" "host accepted, moved to Port"
 send "s"
 want "Saved 'web1'" "server saved"
-want "connection timed out" "unreachable host reported in list"
+# STATUS is 18 wide at 80 columns: "connection timed …".
+want "connection timed" "unreachable host reported in list"
 send "\r"
 want "Monitoring uses BatchMode" "detail view opened"
 want "Press .s. to connect" "detail shows error and hints"
@@ -122,6 +127,12 @@ want {(──|--) prod (──|--)} "t again: heading drawn again"
 want "Group headings on" "t again: message"
 if {[settings_text "$cfg-groups-on"] ne $settings0} { fail "second t changed settings.conf" }
 puts [format "  ok    %-38s" "settings.conf unchanged after 2nd t"]
+send "f"
+want "Temperature in .F" "f: temperature unit F"
+send "f"
+want "Temperature in .C" "f again: back to C"
+if {[settings_text "$cfg-groups-on"] ne $settings0} { fail "f changed settings.conf" }
+puts [format "  ok    %-38s" "settings.conf unchanged after f"]
 quit_list "quit grouped list"
 
 grouped_list "$cfg-groups-off" 0
@@ -129,4 +140,86 @@ want "beta" "grouped list without headings drawn"
 if {[regexp { prod (──|--)} $expect_out(buffer)]} { fail "heading shown although group_headings = 0" }
 puts [format "  ok    %-38s" "no headings with group_headings = 0"]
 quit_list "quit list without headings"
+
+# Docker: ssh runs the scripts locally; only host dock.invalid finds docker.
+set dir "$cfg-docker"
+set bin "$dir/bin"
+file mkdir "$bin/docker-bin"
+set f [open "$dir/servers.conf" w]
+puts $f "\[dock\]\nhost = dock.invalid\n\n\[plain\]\nhost = plain.invalid"
+close $f
+set f [open "$dir/settings.conf" w]
+puts $f "\[settings\]\nping = 0\nlist_refresh = 3600"
+close $f
+set f [open "$bin/ssh" w]
+puts $f [string map [list @BIN@ $bin] {#!/bin/sh
+for a; do [ "$a" = -O ] && exit 0; done
+host= prev=
+for a; do [ "$prev" = -- ] && host=$a; prev=$a; done
+[ "$host" = dock.invalid ] && PATH=@BIN@/docker-bin:$PATH && export PATH
+exec sh -s}]
+close $f
+set f [open "$bin/docker-bin/docker" w]
+puts $f [string map [list @FX@ "$root/tests/fixtures"] {#!/bin/sh
+case $1 in
+    ps) cat @FX@/docker-ps.jsonl ;;
+    stats) cat @FX@/docker-stats.jsonl ;;
+    *) exit 2 ;;
+esac}]
+close $f
+# Drives: smartctl and sudo -n for dock.invalid, answering from the fixtures.
+set f [open "$bin/docker-bin/smartctl" w]
+puts $f [string map [list @FX@ "$root/tests/fixtures/drives"] {#!/bin/sh
+[ "$1" = --scan ] && { printf '/dev/sda -d scsi\n/dev/sdb -d scsi\n'; exit 0; }
+[ "$1" = -n ] && shift 2
+case $2 in
+    /dev/sda) cat @FX@/sata-ok.txt ;;
+    /dev/sdb) cat @FX@/sata-pending.txt ;;
+esac}]
+close $f
+set f [open "$bin/docker-bin/sudo" w]
+puts $f {#!/bin/sh
+[ "$1" = -n ] && shift
+exec "$@"}
+close $f
+file attributes "$bin/docker-bin/smartctl" -permissions 0755
+file attributes "$bin/docker-bin/sudo" -permissions 0755
+file attributes "$bin/ssh" -permissions 0755
+file attributes "$bin/docker-bin/docker" -permissions 0755
+set env(PATH) "$bin:$env(PATH)"
+spawn -noecho $root/scat --config-dir $dir
+want "plain" "list with dock and plain"
+want "sdb: 8 pending" "list: drive warning instead of the OS"
+send "\r"
+want "online" "detail of dock (collector via local sh)"
+want {Drives.{0,40}2 drives} "detail: Drives heading after Disks"
+want {sdb .{0,60}WARN} "detail: drive row with WARN"
+# The Docker section is below the fold at 80x24; give the query a moment,
+# then jump to the end.
+after 1500
+send "G"
+# Styles change inside these rows, so escape sequences may sit between words.
+want {Docker.{0,30}4 running / 5 total} "Docker heading (scrolled to the end)"
+# The rows arrived after the first G; jump to the end again.
+send "G"
+want {worker +97.0 +20.0 +786M.{0,20}Up 5 days \(unhealthy\)} "detail: container in the process grid"
+send "m"
+want {Docker containers \(read only\)} "module menu offers Docker"
+send "\r"
+want "4/5 running" "Docker view: counts in the header"
+want "NAME +IMAGE +STATUS +HEALTH +CPU% +MEM" "Docker view: column header"
+want {unhealthy.{0,20}97.0 +786M} "Docker view: stats loaded"
+send "x"
+send "\033"
+want "Docker containers" "Esc back to the module menu"
+send "\033"
+send "\033"
+want "PING|plain" "back on the list"
+send "j"
+send "\r"
+want "online" "detail of plain"
+send "m"
+want "No modules for plain: Docker: no docker command on plain" "no Docker module without docker"
+send "\033"
+quit_list "quit after the Docker run"
 puts "PASS: TUI smoke test"

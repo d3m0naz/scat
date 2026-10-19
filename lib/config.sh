@@ -37,19 +37,20 @@ declare -gA SC_SNIP=() # snippet name -> command
 declare -gA SC_SET=(
     [list_refresh]=15 [detail_refresh]=5 [connect_timeout]=5
     [command_timeout]=20 [snippet_timeout]=60 [multiplex]=1 [ascii]=0 [theme]=default
-    [ping]=1 [group_headings]=1
+    [ping]=1 [group_headings]=1 [temp_unit]=c [drives]=1 [drives_refresh]=300
 )
 declare -gA SC_SET_LIMITS=(
     [list_refresh]="5 3600" [detail_refresh]="2 3600" [connect_timeout]="1 60"
     [command_timeout]="5 600" [snippet_timeout]="5 3600" [multiplex]="0 1" [ascii]="0 1"
-    [ping]="0 1" [group_headings]="0 1"
+    [ping]="0 1" [group_headings]="0 1" [drives]="0 1" [drives_refresh]="60 3600"
 )
 # Settings with a fixed list of values instead of a number range.
 declare -gA SC_SET_CHOICES=(
     [theme]="default light solarized nord high-contrast"
+    [temp_unit]="c f"
 )
 SC_SET_ORDER=(list_refresh detail_refresh connect_timeout command_timeout snippet_timeout multiplex ascii theme
-    ping group_headings)
+    ping group_headings temp_unit drives drives_refresh)
 
 sc_config_paths() {
     SC_SERVERS_FILE=$SC_CONFIG_DIR/servers.conf
@@ -389,6 +390,17 @@ sc_config_emit_default_settings() {
 # the group order but shows no heading rows; t in the list switches them for
 # the session without changing this file. --list always shows them.
 # group_headings = 1
+# Unit of the CPU temperature: c (Celsius) or f (Fahrenheit). Servers always
+# report Celsius; f in the list switches the unit for the session without
+# changing this file.
+# temp_unit = c
+# Drives section in the detail view: temperature and SMART health per disk
+# via smartctl (needs root or a sudo rule, see README). A problem also shows
+# in the STATUS column of the list (0/1).
+# drives = 1
+# Seconds between drive queries (60-3600). Reading SMART data can wake a
+# sleeping hard disk unless sudo allows smartctl -n standby.
+# drives_refresh = 300
 EOF
 }
 
