@@ -16,14 +16,10 @@
   <a href="#1-get-bash-5"><img src="https://img.shields.io/badge/bash-5%2B-4EAA25.svg" alt="Bash 5 or newer"></a>
 </p>
 
-```
- scat · Servers                                                 2 servers · 12:03:55
-   NAME                PING   CPU  TEMP   MEM   LOAD   UPTIME STATUS
- ── production ──
-▶● web1               14 ms   12%  52°C   37%   0.52   12d 3h Ubuntu 24.04 LTS
- ── ungrouped ──
- ● db1                 jump     -     -     -      -        - authentication failed
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-list.svg">
+  <img src="docs/screenshot-list-light.svg" width="880" alt="scat server list: groups production and ungrouped, web1 online at 12% CPU and 52°C, db1 behind a jump host with an authentication error">
+</picture>
 
 scat is a small app for your terminal. It logs in to your servers with plain
 SSH and shows you what they are doing. Nothing gets installed on the servers.
