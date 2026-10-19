@@ -474,6 +474,43 @@ frame=$(SC_MIN_ROWS=9 SC_MIN_COLS=60; list_frame 9 80 3 4)
 eq "scrolling up to the first server of a group shows its heading above it" " ── lab2 ──" "$(sed -n 3p <<<"$frame" | sed 's/ *$//')"
 frame=$(SC_MIN_ROWS=12 SC_MIN_COLS=60; list_frame 12 60 9 0)
 eq "edge case 60 columns: no row wider than 60" 0 "$(while IFS= read -r l; do ((${#l} > 60)) && echo x; done <<<"$frame" | grep -c x)"
+eq "group_headings defaults to 1" 1 "${SC_SET[group_headings]}"
+sc_list_build 0
+eq "group_headings = 0: same order, no heading rows" "s:alpha s:Beta s:web1 s:web2 s:db s:zeta" "$(list_rows)"
+sc_list_fix 0 1; eq "group_headings = 0: first row is selectable" 0 "$REPLY"
+frame=$(SC_MIN_ROWS=9 SC_MIN_COLS=60; list_frame 9 80 5 0)
+eq "group_headings = 0: scrolled list has no sticky heading" "○ Beta|○ web1|○ web2|○ db|▶○ zeta" \
+    "$(sed -n 3,7p <<<"$frame" | awk '{ print $1, $2 }' | paste -sd '|' -)"
+eq "group_headings = 0: no heading anywhere in the frame" 0 "$(grep -c '──' <<<"$frame")"
+SC_SET[group_headings]=0
+sc_list_build
+eq "without argument the setting is used" "s:alpha s:Beta s:web1 s:web2 s:db s:zeta" "$(list_rows)"
+eq "--list keeps its headings with group_headings = 0" 4 "$(sc_cli_list | grep -c '^-- ')"
+SC_SET[group_headings]=1
+sc_list_build
+
+# Key t: toggles the headings for the session; settings.conf is not written.
+sc_config_load_settings
+cp "$SC_SETTINGS_FILE" "$TMP/settings.before-t"
+rows_on=$(list_rows)
+sc_list_row web2
+sc_list_toggle_headings "$REPLY"; sel=$REPLY
+eq "t: headings off in the list" "s:alpha s:Beta s:web1 s:web2 s:db s:zeta" "$(list_rows)"
+eq "t: same server stays selected" web2 "${SC_LIST_VAL[sel]}"
+eq "t: session value is 0" 0 "${SC_SET[group_headings]}"
+assert "t: settings.conf stays byte for byte the same" cmp -s "$TMP/settings.before-t" "$SC_SETTINGS_FILE"
+sc_list_toggle_headings "$sel"; sel=$REPLY
+eq "t again: headings back" "$rows_on" "$(list_rows)"
+eq "t again: same server stays selected" web2 "${SC_LIST_VAL[sel]}"
+eq "t again: session value is 1" 1 "${SC_SET[group_headings]}"
+assert "t again: settings.conf still unchanged" cmp -s "$TMP/settings.before-t" "$SC_SETTINGS_FILE"
+eq "next start reads the start value from settings.conf, not the toggled one" 1 \
+    "$(SC_SET[group_headings]=0; sc_list_toggle_headings 1 >/dev/null; SC_SET[group_headings]=1; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s' "${SC_SET[group_headings]}")"
+eq "settings writer for t is gone" "" "$(declare -F sc_setting_save)"
+frame=$(SC_G_UPDOWN='↑↓' SC_G_ENTER='⏎'; list_frame 24 80 1 0)
+eq "list footer: all keys, t included" " ↑↓ move  ⏎ open  a add  e edit  d del  s ssh  r refresh  t grp  ? help  q quit " "$(sed -n 24p <<<"$frame")"
+line=$(sed -n 24p <<<"$frame")
+eq "list footer: exactly 80 columns" 80 "${#line}"
 SC_SERVERS=() SC_SRV=()
 for s in c b a; do sc_server_upsert "" "$s" 192.0.2.1 "" "" "" "" "" >/dev/null; done
 sc_list_build
@@ -851,6 +888,93 @@ eq "--check: vtnet0 rx 12.50, tx 0.25 MB/s" 1 "$(grep -c '^  Network   vtnet0 .*
 detail=$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=40 SC_COLS=100; sc_draw_detail opn)
 eq "detail: order on FreeBSD" ordered "$(order_of <<<"$detail")"
 eq "detail: two interfaces, one row each" 2 "$(net_rows <<<"$detail" | grep -c .)"
+
+# ------------------------------------------------------------------------------
+section "ping column"
+pp() { sc_ping_parse "$@"; printf '%s' "$REPLY"; }
+eq "below 1 ms (macOS output)" "<1 ms" "$(pp 0 '64 bytes from 127.0.0.1: icmp_seq=0 ttl=64 time=0.054 ms' '')"
+eq "rounded to whole ms" "12 ms" "$(pp 0 '64 bytes from 192.0.2.1: icmp_seq=1 ttl=63 time=12.345 ms' '')"
+eq "rounds half up" "13 ms" "$(pp 0 'time=12.5 ms' '')"
+eq "0.5 ms shows as 1 ms" "1 ms" "$(pp 0 'time=0.5 ms' '')"
+eq "Linux output" "24 ms" "$(pp 0 '64 bytes from 192.0.2.1 (192.0.2.1): icmp_seq=1 ttl=57 time=23.9 ms' '')"
+eq "whole ms without decimals" "7 ms" "$(pp 0 'time=7 ms' '')"
+eq "statistics line alone is no reply" "-" "$(pp 2 'round-trip min/avg/max/stddev = 1.0/1.0/1.0/0.0 ms' '')"
+eq "no reply" "-" "$(pp 2 '1 packets transmitted, 0 packets received, 100.0% packet loss' '')"
+eq "timeout" "-" "$(pp 124 '' '')"
+eq "unknown host (macOS, FreeBSD)" "!" "$(pp 68 '' 'ping: cannot resolve no-such-host.invalid: Unknown host')"
+eq "unknown host (Linux)" "!" "$(pp 2 '' 'ping: no-such-host.invalid: Name or service not known')"
+eq "unknown host (Linux, no DNS server)" "!" "$(pp 2 '' 'ping: x.example: Temporary failure in name resolution')"
+
+# A fake ping/ping6 in PATH: arguments are "-c 1 -- HOST".
+mkdir -p "$TMP/fakeping"
+cat >"$TMP/fakeping/ping" <<'EOF'
+#!/bin/sh
+[ -n "${FAKEPING_ARGS-}" ] && printf '%s\n' "$*" >"$FAKEPING_ARGS"
+case $4 in
+    slow*) sleep 5 ;;
+    nxdomain*) echo "ping: cannot resolve $4: Unknown host" >&2; exit 68 ;;
+    *) echo "64 bytes from $4: icmp_seq=0 ttl=64 time=3.2 ms" ;;
+esac
+EOF
+sed 's/time=3.2/time=6.0/' "$TMP/fakeping/ping" >"$TMP/fakeping/ping6"
+chmod +x "$TMP/fakeping/ping" "$TMP/fakeping/ping6"
+sc_runtime_init
+ph() { (PATH=$TMP/fakeping:$PATH; sc_ping_host "$1"; printf '%s' "$REPLY"); }
+eq "reply from the host" "3 ms" "$(ph 192.0.2.5)"
+eq "one packet, host after --" "-c 1 -- 192.0.2.5" "$(export FAKEPING_ARGS=$TMP/pingargs; ph 192.0.2.5 >/dev/null; cat "$TMP/pingargs")"
+eq "IPv6 address uses ping6" "6 ms" "$(ph 2001:db8::1)"
+eq "unknown host" "!" "$(ph nxdomain.invalid)"
+start=$SECONDS
+eq "no reply within the hard limit" "-" "$(ph slow.example)"
+assert "hard limit of ${SC_PING_TIMEOUT}s respected (<= 4s)" test $((SECONDS - start)) -le 4
+eq "a host starting with '-' never reaches ping" "!" "$(ph -f)"
+eq "empty host" "!" "$(ph '')"
+
+SC_SERVERS=() SC_SRV=() SC_M=() SC_PING=()
+sc_server_upsert "" p1 192.0.2.5 "" "" "" "" "" >/dev/null
+sc_server_upsert "" p2 10.0.0.5 "" "" "" p1 "" >/dev/null
+sc_server_upsert "" p3 nxdomain.invalid "" "" "" "" "" >/dev/null
+sc_server_upsert "" p4 192.0.2.6 "" "" "" "" "" >/dev/null
+PATH=$TMP/fakeping:$PATH sc_ping_async p1
+PATH=$TMP/fakeping:$PATH sc_ping_async p2
+PATH=$TMP/fakeping:$PATH sc_ping_async p3
+eq "behind a jump host: not pinged" jump "${SC_PING[p2]-}"
+eq "behind a jump host: no background process" "" "${SC_PING_PID[p2]-}"
+for _ in {1..40}; do
+    sc_poll_results
+    [[ -n ${SC_PING[p1]-} && -n ${SC_PING[p3]-} ]] && break
+    sleep 0.1
+done
+eq "background result picked up" "3 ms" "${SC_PING[p1]-}"
+eq "background unknown host" "!" "${SC_PING[p3]-}"
+eq "no ping files left behind" 0 "$(ls -A "$SC_RUNTIME_DIR" | grep -c ping)"
+printf '5 ms\n' >"$SC_RUNTIME_DIR/gone.ping"
+sc_poll_results
+eq "result of a deleted server is dropped" "|0" "${SC_PING[gone]-}|$(ls -A "$SC_RUNTIME_DIR" | grep -c ping)"
+sc_runtime_cleanup
+
+sc_list_build
+pingcol() { cut -c 21-27 <<<"$1" | sed -n "$2"p; } # frame row -> PING cell
+frame=$(list_frame 24 80 0 0)
+eq "header: PING right-aligned after NAME" "   NAME                PING   CPU   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
+eq "cell: reply time" "   3 ms" "$(pingcol "$frame" 3)"
+eq "cell: behind a jump host" "   jump" "$(pingcol "$frame" 4)"
+eq "cell: unknown host" "      !" "$(pingcol "$frame" 5)"
+eq "cell: not measured yet" "      …" "$(pingcol "$frame" 6)"
+eq "80 columns with PING: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$frame" | grep -c x)"
+eq "unknown host is shown in the error color" 1 "$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=80; sc_draw_servers 0 0 | grep -cF "$C_CRIT      !")"
+eq "TARGET column from 96 columns on (95: none)" "1 0" "$(list_frame 24 96 0 0 | sed -n 2p | grep -c TARGET) $(list_frame 24 95 0 0 | sed -n 2p | grep -c TARGET)"
+frame=$(SC_SET[ping]=0; list_frame 24 80 0 0)
+eq "ping = 0: no PING column" "   NAME               CPU   MEM   LOAD   UPTIME STATUS" "$(sed -n 2p <<<"$frame" | sed 's/ *$//')"
+
+eq "ping defaults to 1" 1 "${SC_SET[ping]}"
+printf '[settings]\nping = 0\ngroup_headings = 0\n' >"$TMP/ping.conf"
+eq "ping and group_headings are read" "0 0" \
+    "$(SC_SETTINGS_FILE=$TMP/ping.conf; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s %s' "${SC_SET[ping]}" "${SC_SET[group_headings]}")"
+printf '[settings]\nping = 2\ngroup_headings = yes\n' >"$TMP/ping.conf"
+eq "invalid values: warnings, defaults kept" "1 1|settings.conf:2: ping must be a whole number between 0 and 1|settings.conf:3: group_headings must be a whole number between 0 and 1" \
+    "$(SC_SETTINGS_FILE=$TMP/ping.conf; SC_CONFIG_WARNINGS=(); sc_config_load_settings; printf '%s %s|%s|%s' "${SC_SET[ping]}" "${SC_SET[group_headings]}" "${SC_CONFIG_WARNINGS[@]}")"
+eq "settings.conf template documents both" 2 "$(sc_config_emit_default_settings | grep -cE '^# (ping|group_headings) = 1$')"
 
 # ------------------------------------------------------------------------------
 section "version consistency (scat, website, installer)"

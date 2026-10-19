@@ -17,32 +17,32 @@
 
   // Groups A-Z, servers A-Z within a group, ungrouped last (as scat sorts).
   var SERVERS = [
-    { group: "lab", name: "lab-ci", target: "ci@192.0.2.30:22", os: "Linux 6.8.0", cores: 8,
+    { group: "lab", name: "lab-ci", ping: 2, target: "ci@192.0.2.30:22", os: "Linux 6.8.0", cores: 8,
       cpu: 64, mem: 71, swap: 12, load: 3.10, up: "4d 7h", procs: 241,
       disks: [["/", 39.1, 48], ["/srv/cache", 476, 82]],
       nics: [["eth0", 38.2, 9.6], ["eth1", 0.4, 0.1]],
       top: [["4312", "ci", "build-runner"], ["4398", "ci", "test-worker"], ["1220", "root", "cron"], ["988", "root", "sshd"]] },
-    { group: "lab", name: "lab-edge", target: "192.0.2.31", os: "Linux 6.6.0", cores: 2,
+    { group: "lab", name: "lab-edge", ping: 4, target: "192.0.2.31", os: "Linux 6.6.0", cores: 2,
       cpu: 9, mem: 33, swap: 0, load: 0.21, up: "31d 2h", procs: 96,
       disks: [["/", 14.6, 22]],
       nics: [["eth0", 1.2, 0.8], ["wlan0", 0.1, 0.0]],
       top: [["611", "root", "edge-proxy"], ["702", "nobody", "metrics-agent"], ["455", "root", "sshd"], ["1", "root", "init"]] },
-    { group: "production", name: "db-01", target: "db@203.0.113.20:22", os: "Linux 6.8.0", cores: 16,
+    { group: "production", name: "db-01", ping: 18, target: "db@203.0.113.20:22", os: "Linux 6.8.0", cores: 16,
       cpu: 41, mem: 84, swap: 6, load: 5.42, up: "88d 1h", procs: 312,
       disks: [["/", 39.1, 35], ["/var/lib/db", 953, 61]],
       nics: [["eth0", 22.7, 31.5], ["eth1", 6.3, 6.1]],
       top: [["2201", "db", "db-server"], ["2240", "db", "db-writer"], ["3012", "backup", "dump-job"], ["988", "root", "sshd"]] },
-    { group: "production", name: "web-01", target: "deploy@203.0.113.10:22", os: "Linux 6.8.0", cores: 4,
+    { group: "production", name: "web-01", ping: 17, target: "deploy@203.0.113.10:22", os: "Linux 6.8.0", cores: 4,
       cpu: 23, mem: 46, swap: 2, load: 0.84, up: "12d 3h", procs: 183,
       disks: [["/", 39.1, 41], ["/var", 95.3, 63]],
       nics: [["eth0", 12.4, 31.0], ["eth1", 0.3, 0.2]],
       top: [["1840", "www", "app-server"], ["1903", "www", "app-server"], ["2117", "www", "queue-worker"], ["988", "root", "sshd"]] },
-    { group: "production", name: "web-02", target: "deploy@203.0.113.11:22", os: "Linux 6.8.0", cores: 4,
+    { group: "production", name: "web-02", ping: 19, target: "deploy@203.0.113.11:22", os: "Linux 6.8.0", cores: 4,
       cpu: 37, mem: 52, swap: 2, load: 1.12, up: "12d 3h", procs: 191,
       disks: [["/", 39.1, 44], ["/var", 95.3, 58]],
       nics: [["eth0", 18.9, 47.2], ["eth1", 0.5, 0.3]],
       top: [["1851", "www", "app-server"], ["1877", "www", "app-server"], ["2120", "www", "queue-worker"], ["1220", "root", "cron"]] },
-    { group: "", name: "backup-01", target: "backup@192.0.2.40:22", os: "Linux 6.1.0", cores: 2,
+    { group: "", name: "backup-01", ping: 3, target: "backup@192.0.2.40:22", os: "Linux 6.1.0", cores: 2,
       cpu: 12, mem: 28, swap: 0, load: 0.30, up: "140d 9h", procs: 88,
       disks: [["/", 29.3, 18], ["/backup", 3725, 77]],
       nics: [["eth0", 62.0, 0.9]],
@@ -126,13 +126,13 @@
   // --- frames ------------------------------------------------------------------
 
   // state: { view: "list"|"detail", sel: server index, t: seconds on the clock,
-  //          live: per-server values {cpu, mem, load, nics:[[rx, tx]]}, pressed: key }
+  //          live: per-server values {cpu, mem, load, ping, nics:[[rx, tx]]}, pressed: key }
   function listFrame(st) {
     var rows = [], i, s, r, lastGroup = null, v, g;
     rows.push(header("Servers", SERVERS.length + " servers · " + clock(st.t)));
     r = new Row();
     // At 80 columns scat has no room for the TARGET column (it needs 40 free).
-    r.add("   " + fit("NAME", 16) + " " + right("CPU", 5) + " " + right("MEM", 5) + " " +
+    r.add("   " + fit("NAME", 16) + " " + right("PING", 7) + " " + right("CPU", 5) + " " + right("MEM", 5) + " " +
           right("LOAD", 6) + " " + right("UPTIME", 8) + " STATUS", "d");
     rows.push(r.html());
     for (i = 0; i < SERVERS.length; i++) {
@@ -149,15 +149,15 @@
       r.add("●", (on ? cls + " " : "") + "ok");
       r.add(" ", cls);
       r.add(fit(s.name, 16), (cls ? cls + " " : "") + "b");
-      r.add(" " + right(Math.round(v.cpu) + "%", 5) + " " + right(Math.round(v.mem) + "%", 5) + " " +
+      r.add(" " + right(Math.round(v.ping) + " ms", 7) + " " + right(Math.round(v.cpu) + "%", 5) + " " + right(Math.round(v.mem) + "%", 5) + " " +
             right(v.load.toFixed(2), 6) + " " + right(s.up, 8) + " ", cls);
       r.add(fit(s.os, COLS - r.len), (cls ? cls + " " : "") + "d");
       rows.push(r.html(cls));
     }
     while (rows.length < ROWS - 2) rows.push(new Row().html());
     rows.push(new Row().html());
-    rows.push(footer(["↑↓", "move", "⏎", "details", "a", "add", "e", "edit", "d", "delete", "s", "ssh",
-                      "r", "refresh", "?", "help", "q", "quit"], st.pressed));
+    rows.push(footer(["↑↓", "move", "⏎", "open", "a", "add", "e", "edit", "d", "del", "s", "ssh",
+                      "r", "refresh", "t", "grp", "?", "help", "q", "quit"], st.pressed));
     return rows;
   }
 
@@ -219,7 +219,7 @@
     var out = [], i, s;
     for (i = 0; i < SERVERS.length; i++) {
       s = SERVERS[i];
-      out.push({ cpu: s.cpu, mem: s.mem, load: s.load, nics: s.nics.map(function (n) { return [n[1], n[2]]; }) });
+      out.push({ cpu: s.cpu, mem: s.mem, load: s.load, ping: s.ping, nics: s.nics.map(function (n) { return [n[1], n[2]]; }) });
     }
     return out;
   }
@@ -235,6 +235,7 @@
       o.cpu = drift(o.cpu, t * 0.9 + i, 0.25, 1, 99) * fill;
       o.mem = drift(o.mem, t * 0.3 + i * 2, 0.04, 1, 99) * fill;
       o.load = drift(o.load, t * 0.5 + i, 0.15, 0, 64);
+      o.ping = drift(o.ping, t * 0.7 + i * 5, 0.2, 1, 999);
       for (j = 0; j < o.nics.length; j++) {
         o.nics[j][0] = drift(o.nics[j][0], t * 1.3 + i + j, 0.35, 0, 125) * fill;
         o.nics[j][1] = drift(o.nics[j][1], t * 1.1 + i * 3 + j, 0.35, 0, 125) * fill;

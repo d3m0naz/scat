@@ -22,8 +22,9 @@ sc_cli_list() {
         return 0
     fi
     printf '%-20s %-40s %s\n' NAME TARGET GROUP
-    # Same rows as the TUI list: with groups, "-- group --" headings.
-    sc_list_build
+    # Same rows as the TUI list, but always with "-- group --" headings
+    # (group_headings only affects the TUI).
+    sc_list_build 1
     for i in "${!SC_LIST_VAL[@]}"; do
         name=${SC_LIST_VAL[i]}
         if [[ ${SC_LIST_KIND[i]} == h ]]; then

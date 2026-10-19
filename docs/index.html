@@ -171,7 +171,7 @@
   <div>
     <h1 id="top" class="sr-only">scat</h1>
     <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
-    <p class="tag">scat 0.2.1 · released <time datetime="2026-10-18">2026-10-18</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.1">release notes</a></p>
+    <p class="tag">scat 0.2.2 · released <time datetime="2026-10-19">2026-10-19</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.2">release notes</a></p>
   </div>
 </section>
 
@@ -179,7 +179,7 @@
 <pre><span class="p">$ </span><span id="install-cmd">curl -fsSL https://raw.githubusercontent.com/d3m0naz/scat/main/install.sh | bash</span></pre>
 <button class="toggle copy-btn" type="button" data-copy="install-cmd" aria-label="Copy install command" hidden>[ copy ]</button>
 <span class="sr-only" id="copy-status" aria-live="polite"></span>
-<p class="install-note">This installs scat 0.2.1 (released <time datetime="2026-10-18">2026-10-18</time>).</p>
+<p class="install-note">This installs scat 0.2.2 (released <time datetime="2026-10-19">2026-10-19</time>).</p>
 <details class="install-more">
 <summary>read more</summary>
 <p class="install-note">The installer runs with the first <code>bash</code> in <code>PATH</code>, so Bash 5 is needed first, see <a href="#bash-5">“bash 5 or newer”</a> below. It checks the SHA-256 of the release archive before it installs anything, puts scat into <code>~/.local/share/scat-&lt;version&gt;</code> and links <code>~/.local/bin/scat</code>. If <code>~/.local/bin</code> is not on your <code>PATH</code>, add it: <code>export PATH="$HOME/.local/bin:$PATH"</code>. To install elsewhere, set <code>SCAT_PREFIX</code>. Releases and checksums are on the <a href="https://github.com/d3m0naz/scat/releases">releases page</a>.</p>
@@ -188,16 +188,16 @@
 <h2>See SCAT in action!</h2>
 <section class="screen demo" aria-labelledby="demo-caption">
 <pre id="demo-screen" aria-hidden="true"><span class="inv"> scat · Servers                                           </span><span class="inv">6 servers · 12:03:55  </span>
-<span class="d">   NAME               CPU   MEM   LOAD   UPTIME STATUS</span>                          
+<span class="d">   NAME                PING   CPU   MEM   LOAD   UPTIME STATUS</span>                  
 <span class="k b"> ── lab ──</span>                                                                      
- <span class="ok">●</span> <span class="b">lab-ci          </span>   71%   72%   3.30    4d 7h <span class="d">Linux 6.8.0                     </span>
- <span class="ok">●</span> <span class="b">lab-edge        </span>   11%   34%   0.23   31d 2h <span class="d">Linux 6.6.0                     </span>
+ <span class="ok">●</span> <span class="b">lab-ci          </span>    2 ms   71%   72%   3.30    4d 7h <span class="d">Linux 6.8.0             </span>
+ <span class="ok">●</span> <span class="b">lab-edge        </span>    3 ms   11%   34%   0.23   31d 2h <span class="d">Linux 6.6.0             </span>
 <span class="k b"> ── production ──</span>                                                               
- <span class="ok">●</span> <span class="b">db-01           </span>   47%   80%   5.90   88d 1h <span class="d">Linux 6.8.0                     </span>
- <span class="ok">●</span> <span class="b">web-01          </span>   27%   46%   0.92   12d 3h <span class="d">Linux 6.8.0                     </span>
-<span class="sel">▶</span><span class="sel ok">●</span><span class="sel"> </span><span class="sel b">web-02          </span><span class="sel">   27%   55%   0.93   12d 3h </span><span class="sel d">Linux 6.8.0                     </span>
+ <span class="ok">●</span> <span class="b">db-01           </span>   14 ms   47%   80%   5.90   88d 1h <span class="d">Linux 6.8.0             </span>
+ <span class="ok">●</span> <span class="b">web-01          </span>   18 ms   27%   46%   0.92   12d 3h <span class="d">Linux 6.8.0             </span>
+<span class="sel">▶</span><span class="sel ok">●</span><span class="sel"> </span><span class="sel b">web-02          </span><span class="sel">   23 ms   27%   55%   0.93   12d 3h </span><span class="sel d">Linux 6.8.0             </span>
 <span class="k b"> ── ungrouped ──</span>                                                                
- <span class="ok">●</span> <span class="b">backup-01       </span>    9%   27%   0.26  140d 9h <span class="d">Linux 6.1.0                     </span>
+ <span class="ok">●</span> <span class="b">backup-01       </span>    3 ms    9%   27%   0.26  140d 9h <span class="d">Linux 6.1.0             </span>
                                                                                 
                                                                                 
                                                                                 
@@ -210,7 +210,7 @@
                                                                                 
                                                                                 
                                                                                 
-<span class="inv"> </span><span class="inv b">↑↓</span><span class="inv"> move </span><span class="inv"> </span><span class="inv b">⏎</span><span class="inv"> details </span><span class="inv"> </span><span class="inv b">a</span><span class="inv"> add </span><span class="inv"> </span><span class="inv b">e</span><span class="inv"> edit </span><span class="inv"> </span><span class="inv b">d</span><span class="inv"> delete </span><span class="inv"> </span><span class="inv b">s</span><span class="inv"> ssh </span><span class="inv"> </span><span class="inv b">r</span><span class="inv"> refresh </span><span class="inv"> </span><span class="inv b">?</span><span class="inv"> help </span><span class="inv"> </span><span class="inv b">q</span><span class="inv"> quit </span><span class="inv"> </span></pre>
+<span class="inv"> </span><span class="inv b">↑↓</span><span class="inv"> move </span><span class="inv"> </span><span class="inv b">⏎</span><span class="inv"> open </span><span class="inv"> </span><span class="inv b">a</span><span class="inv"> add </span><span class="inv"> </span><span class="inv b">e</span><span class="inv"> edit </span><span class="inv"> </span><span class="inv b">d</span><span class="inv"> del </span><span class="inv"> </span><span class="inv b">s</span><span class="inv"> ssh </span><span class="inv"> </span><span class="inv b">r</span><span class="inv"> refresh </span><span class="inv"> </span><span class="inv b">t</span><span class="inv"> grp </span><span class="inv"> </span><span class="inv b">?</span><span class="inv"> help </span><span class="inv"> </span><span class="inv b">q</span><span class="inv"> quit </span></pre>
 <button class="toggle demo-toggle" id="demo-toggle" type="button" hidden>[ ▶ play ]</button>
 <p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
@@ -226,7 +226,7 @@
 
 <h2>what it does</h2>
 <ul>
-  <li>Keeps a list of servers: add, edit, delete and reorder, with group headings and optional jump hosts.</li>
+  <li>Keeps a list of servers: add, edit, delete and reorder, with ping times, group headings (can be turned off) and optional jump hosts.</li>
   <li>Shows status and live metrics: CPU, memory, load, uptime, disks, network per interface.</li>
   <li>Scrolls the detail view when it is taller than the screen, with a position indicator.</li>
   <li>Lists processes, sorts them and sends SIGTERM after a confirmation.</li>
@@ -250,6 +250,7 @@
   <tr><td>Enter</td><td>open</td></tr>
   <tr><td>a / e / d</td><td>add / edit / delete a server</td></tr>
   <tr><td>J / K</td><td>move a server down / up</td></tr>
+  <tr><td>t</td><td>group headings on / off (this session)</td></tr>
   <tr><td>s</td><td>ssh shell</td></tr>
   <tr><td>p</td><td>processes</td></tr>
   <tr><td>m</td><td>modules</td></tr>
@@ -275,7 +276,7 @@
 </ul>
 
 <footer>
-  <p>scat 0.2.1 · MIT licence · &copy; 2026 d3m0naz</p>
+  <p>scat 0.2.2 · MIT licence · &copy; 2026 d3m0naz</p>
 </footer>
 
 </div>

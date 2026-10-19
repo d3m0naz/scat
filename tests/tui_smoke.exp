@@ -1,8 +1,12 @@
 #!/usr/bin/expect -f
-# Drives the TUI in a pseudo-terminal (with --theme high-contrast): add a
-# server through the form, open the detail view (unreachable TEST-NET host),
-# help (shows the theme), quit; then check that
-# the terminal settings were restored. Usage: tests/tui_smoke.exp <config-dir>
+# Drives the TUI in a pseudo-terminal at 80x24 (with --theme high-contrast):
+# add a server through the form, open the detail view (unreachable TEST-NET
+# host), help (shows the theme), quit; then check that the terminal settings
+# were restored. Two more runs show a grouped list with and without group
+# headings (group_headings); the first also toggles them with t (no effect
+# in the detail view; on the list only for the session, settings.conf stays
+# the same).
+# Usage: tests/tui_smoke.exp <config-dir>
 
 set timeout 15
 set cfg [lindex $argv 0]
@@ -24,9 +28,10 @@ proc want {pattern step} {
 }
 
 set env(TERM) xterm-256color
-set stty_init "rows 30 columns 100"
+set stty_init "rows 24 columns 80"
 spawn -noecho bash -c "stty -g > '$stty_file.before'; '$root/scat' --config-dir '$cfg' --theme high-contrast; echo EXIT=\$?; stty -g > '$stty_file.after'"
 
+want "PING" "PING column in the list header"
 want "No servers yet" "empty server list shown"
 send "a"
 want "Add server" "add form opened"
@@ -46,7 +51,7 @@ send "\033?"
 want "keyboard reference" "Esc back + help (typeahead kept)"
 want "theme high-contrast" "--theme applied (shown in help)"
 send "q"
-want "TARGET" "help closed, back on list"
+want "PING" "help closed, back on list"
 send "q"
 want "EXIT=0" "quit with status 0"
 expect eof
@@ -71,4 +76,57 @@ puts "  ok    terminal settings restored"
 set f [open "$cfg/servers.conf"]; set conf [read $f]; close $f
 if {![string match "*\\\[web1\\\]*host = 192.0.2.1*" $conf]} { fail "servers.conf missing web1" }
 puts "  ok    servers.conf contains web1"
+
+# Grouped list from a prepared config; $headings is the group_headings value.
+proc grouped_list {dir headings} {
+    global root spawn_id
+    file mkdir $dir
+    set f [open "$dir/servers.conf" w]
+    puts $f "\[alpha\]\nhost = 192.0.2.10\ngroup = prod\n\n\[beta\]\nhost = 192.0.2.11\ngroup = test"
+    close $f
+    set f [open "$dir/settings.conf" w]
+    puts $f "\[settings\]\ngroup_headings = $headings\nlist_refresh = 3600"
+    close $f
+    spawn -noecho $root/scat --config-dir $dir
+}
+proc quit_list {step} {
+    send "q"
+    expect {
+        eof { puts [format "  ok    %-38s" $step] }
+        timeout { fail "$step (did not quit)" }
+    }
+}
+
+proc settings_text {dir} {
+    set f [open "$dir/settings.conf"]; set c [read $f]; close $f
+    return $c
+}
+
+grouped_list "$cfg-groups-on" 1
+set settings0 [settings_text "$cfg-groups-on"]
+want {(──|--) prod (──|--)} "group headings shown (group_headings = 1)"
+want {(──|--) test (──|--)} "second group heading shown"
+send "\r"
+want "processes" "detail view of a grouped server"
+send "t"
+send "\033"
+want "PING" "back on the list after t in the detail"
+if {[regexp {Group headings} $expect_out(buffer)]} { fail "t in the detail view toggled the headings" }
+puts [format "  ok    %-38s" "t in the detail view: no effect"]
+send "t"
+want "Group headings off" "t on the list: headings off"
+if {[settings_text "$cfg-groups-on"] ne $settings0} { fail "t changed settings.conf" }
+puts [format "  ok    %-38s" "settings.conf unchanged after t"]
+send "t"
+want {(──|--) prod (──|--)} "t again: heading drawn again"
+want "Group headings on" "t again: message"
+if {[settings_text "$cfg-groups-on"] ne $settings0} { fail "second t changed settings.conf" }
+puts [format "  ok    %-38s" "settings.conf unchanged after 2nd t"]
+quit_list "quit grouped list"
+
+grouped_list "$cfg-groups-off" 0
+want "beta" "grouped list without headings drawn"
+if {[regexp { prod (──|--)} $expect_out(buffer)]} { fail "heading shown although group_headings = 0" }
+puts [format "  ok    %-38s" "no headings with group_headings = 0"]
+quit_list "quit list without headings"
 puts "PASS: TUI smoke test"

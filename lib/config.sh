@@ -37,16 +37,19 @@ declare -gA SC_SNIP=() # snippet name -> command
 declare -gA SC_SET=(
     [list_refresh]=15 [detail_refresh]=5 [connect_timeout]=5
     [command_timeout]=20 [snippet_timeout]=60 [multiplex]=1 [ascii]=0 [theme]=default
+    [ping]=1 [group_headings]=1
 )
 declare -gA SC_SET_LIMITS=(
     [list_refresh]="5 3600" [detail_refresh]="2 3600" [connect_timeout]="1 60"
     [command_timeout]="5 600" [snippet_timeout]="5 3600" [multiplex]="0 1" [ascii]="0 1"
+    [ping]="0 1" [group_headings]="0 1"
 )
 # Settings with a fixed list of values instead of a number range.
 declare -gA SC_SET_CHOICES=(
     [theme]="default light solarized nord high-contrast"
 )
-SC_SET_ORDER=(list_refresh detail_refresh connect_timeout command_timeout snippet_timeout multiplex ascii theme)
+SC_SET_ORDER=(list_refresh detail_refresh connect_timeout command_timeout snippet_timeout multiplex ascii theme
+    ping group_headings)
 
 sc_config_paths() {
     SC_SERVERS_FILE=$SC_CONFIG_DIR/servers.conf
@@ -379,6 +382,13 @@ sc_config_emit_default_settings() {
 # Color theme: default, light (light terminals), solarized, nord, high-contrast.
 # NO_COLOR in the environment turns colors off in every theme.
 # theme = default
+# PING column in the server list: one ping from this machine to each host per
+# list refresh (0/1). Hosts behind a jump host show "jump".
+# ping = 1
+# Group headings in the server list at start (0/1). With 0 the list keeps
+# the group order but shows no heading rows; t in the list switches them for
+# the session without changing this file. --list always shows them.
+# group_headings = 1
 EOF
 }
 

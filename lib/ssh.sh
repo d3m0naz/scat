@@ -12,6 +12,9 @@ SC_RUNTIME_DIR=
 declare -ga SC_SSH_OPTS=() SC_SSH_CMD=()
 declare -gA SC_FETCH_PID=() # server name -> pid of the running background fetch
 declare -gA SC_M=()         # "<name>|<metric>" -> value
+declare -gA SC_PING=()      # server name -> ping column value (see sc_ping_parse)
+declare -gA SC_PING_PID=()  # server name -> pid of the running background ping
+SC_PING_TIMEOUT=2
 
 # A short path under /tmp keeps ControlPath sockets below the 104-byte limit
 # that $TMPDIR on macOS would exceed. The PID in the name lets later runs
@@ -31,7 +34,7 @@ sc_runtime_init() {
 sc_runtime_cleanup() {
     local pid
     [[ -n $SC_RUNTIME_DIR && -d $SC_RUNTIME_DIR ]] || return 0
-    for pid in "${SC_FETCH_PID[@]}"; do
+    for pid in "${SC_FETCH_PID[@]}" "${SC_PING_PID[@]}"; do
         pkill -TERM -P "$pid" 2>/dev/null
         kill -TERM "$pid" 2>/dev/null
     done
@@ -175,7 +178,8 @@ sc_fetch_all() {
     for name in "${SC_SERVERS[@]}"; do sc_fetch_async "$name"; done
 }
 
-# Loads finished background results; returns 0 if anything changed.
+# Loads finished background results (metrics and pings); returns 0 if
+# anything changed.
 sc_poll_results() {
     local f name changed=1
     for f in "$SC_RUNTIME_DIR"/*.new; do
@@ -188,7 +192,89 @@ sc_poll_results() {
         sc_metrics_load "$name" "$SC_RUNTIME_DIR/$name.res"
         changed=0
     done
+    for f in "$SC_RUNTIME_DIR"/*.ping; do
+        [[ -e $f ]] || continue
+        name=${f##*/}
+        name=${name%.ping}
+        unset "SC_PING_PID[$name]"
+        if sc_server_exists "$name"; then
+            IFS= read -r SC_PING[$name] <"$f"
+            sc_sanitize "${SC_PING[$name]}"
+            SC_PING[$name]=$REPLY
+            changed=0
+        fi
+        rm -f -- "$f"
+    done
     return "$changed"
+}
+
+# --- ping ---------------------------------------------------------------------
+
+# One ICMP echo from this machine to the server's host, for the PING column
+# of the server list. The host is used as written in servers.conf; ping does
+# not know ~/.ssh/config aliases. Servers behind a jump host are not pinged.
+
+# Turns ping's exit status $1, stdout $2 and stderr $3 into the column value
+# in REPLY: "12 ms", "<1 ms", "-" (no reply, timeout) or "!" (host unknown).
+sc_ping_parse() {
+    local rc=$1 out=$2 err=$3 ms frac
+    if ((rc == 0)) && [[ $out =~ time[=\<]([0-9]+)(\.([0-9]))?[0-9]*\ ?ms ]]; then
+        ms=${BASH_REMATCH[1]} frac=${BASH_REMATCH[3]:-0}
+        ms=$((10#$ms + (frac >= 5)))
+        if ((10#${BASH_REMATCH[1]} == 0 && frac < 5)); then REPLY="<1 ms"; else REPLY="$ms ms"; fi
+        return 0
+    fi
+    case $err in
+        *"cannot resolve"* | *"Unknown host"* | *"unknown host"* | *"not known"* | \
+            *"Name or service"* | *"nodename nor servname"* | *"name resolution"*)
+            REPLY="!" ;;
+        *) REPLY="-" ;;
+    esac
+}
+
+# Pings host $1 once with a hard limit of SC_PING_TIMEOUT seconds; REPLY as
+# from sc_ping_parse.
+sc_ping_host() {
+    local host=$1 cmd=ping f=$SC_RUNTIME_DIR/.ping.$BASHPID out= err= rc
+    if [[ -z $host || $host == -* ]]; then
+        REPLY="!"
+        return 0
+    fi
+    [[ $host == *:* ]] && command -v ping6 >/dev/null 2>&1 && cmd=ping6
+    # Files, not $(...): a pipe would wait for any child still holding it.
+    sc_run_timeout "$SC_PING_TIMEOUT" /dev/null "$cmd" -c 1 -- "$host" >"$f.out" 2>"$f.err"
+    rc=$?
+    [[ -r $f.out ]] && out=$(<"$f.out")
+    [[ -r $f.err ]] && err=$(<"$f.err")
+    rm -f -- "$f.out" "$f.err"
+    sc_ping_parse "$rc" "$out" "$err"
+}
+
+# Starts a background ping of server $1 unless one is running. The result
+# arrives as "<name>.ping" and is picked up by sc_poll_results; the column
+# keeps the previous value until then.
+sc_ping_async() {
+    local name=$1 pid=${SC_PING_PID[$1]-}
+    [[ -n $SC_RUNTIME_DIR ]] || return 1
+    if [[ -n ${SC_SRV[$name|jump]-} ]]; then
+        SC_PING[$name]=jump
+        return 0
+    fi
+    if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    (
+        trap 'pkill -TERM -P "$BASHPID" 2>/dev/null; exit 143' TERM
+        sc_ping_host "${SC_SRV[$name|host]-}"
+        printf '%s\n' "$REPLY" >"$SC_RUNTIME_DIR/$name.ping.tmp" &&
+            mv -f -- "$SC_RUNTIME_DIR/$name.ping.tmp" "$SC_RUNTIME_DIR/$name.ping"
+    ) </dev/null >/dev/null 2>&1 &
+    SC_PING_PID[$name]=$!
+}
+
+sc_ping_all() {
+    local name
+    for name in "${SC_SERVERS[@]}"; do sc_ping_async "$name"; done
 }
 
 sc_metrics_clear() {

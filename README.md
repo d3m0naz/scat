@@ -18,7 +18,7 @@ disks and network per interface, look at processes, open a shell or run saved
 commands. Your servers need nothing but SSH and a POSIX `sh`. Docker and
 Kubernetes support are planned (see below).
 
-- **Live status** for every server, grouped by your own group names
+- **Live status** for every server with ping time, grouped by your own group names
 - **Detail view** with CPU, memory, swap, load, disks, network bars and processes
 - **Keys only:** no passwords are asked for or stored
 - **Plain config:** INI files, parsed as data and written with mode 600
@@ -36,12 +36,12 @@ The installer checks the SHA-256 of the release archive before it installs
 anything. Bash 5 is needed first (see [Bash 5 or newer](#bash-5-or-newer)).
 
 ```
- scat · Servers                                               2 servers · 12:03:55
-   NAME             TARGET                    CPU   MEM   LOAD   UPTIME STATUS
+ scat · Servers                                                               2 servers · 12:03:55
+   NAME             TARGET                    PING   CPU   MEM   LOAD   UPTIME STATUS
  ── production ──
- ▶● web1            deploy@203.0.113.10:22     12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
+▶● web1             deploy@203.0.113.10:22   14 ms   12%   37%   0.52   12d 3h Ubuntu 24.04 LTS
  ── ungrouped ──
-  ● db1             db.internal via bastion     -     -      -        - authentication failed - …
+ ● db1              db.internal via basti…    jump     -     -      -        - authentication faile…
 ```
 
 ## Installation
@@ -143,7 +143,7 @@ be an alias defined there.
 | Where | Keys |
 |---|---|
 | Everywhere | `↑`/`↓` or `j`/`k` move · `PgUp`/`PgDn` · `g`/`G` top/bottom · `Enter` open · `Esc`/`q` back · `Ctrl-C` quit · `Ctrl-Z` suspend |
-| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `?` help · `q`/`Esc` quit |
+| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `t` group headings on/off (this session) · `?` help · `q`/`Esc` quit |
 | Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules · `r` refresh · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
 | Processes | `c`/`m`/`p`/`n` sort by CPU/memory/PID/name · `K` send SIGTERM (asks first) · `r` refresh |
 | Snippets | `Enter` run on the current server (asks first) · `a`/`e`/`d` add/edit/delete |
@@ -215,6 +215,8 @@ command = df -h
 | `multiplex` | 1 | 0/1 | reuse connections via ssh ControlMaster |
 | `ascii` | 0 | 0/1 | ASCII instead of Unicode glyphs |
 | `theme` | default | see below | color theme of the TUI |
+| `ping` | 1 | 0/1 | PING column in the server list |
+| `group_headings` | 1 | 0/1 | group heading rows in the server list at start (`t` toggles them for the session) |
 
 **Themes:** `default` (the original colors, for dark terminals), `light`
 (for light terminal backgrounds), `solarized` (Solarized Dark), `nord`
@@ -248,8 +250,25 @@ server has a group, the list is grouped:
 - the group name is no longer repeated in each row; the detail view shows
   it next to the target.
 
+With `group_headings = 0` the list keeps the same order but shows no heading
+rows (and no sticky heading); the detail view still shows the group. `t` in
+the list switches the headings on and off at once, for the running session
+only: `settings.conf` is not changed, and the next start uses
+`group_headings` again.
+
 `--list` uses the same order with plain `-- production --` heading lines and
-keeps the GROUP column. Without groups its output is unchanged.
+keeps the GROUP column, whatever `group_headings` says. Without groups its
+output is unchanged.
+
+**PING column:** at every list refresh scat sends one ping from your machine
+to each server's `host` and shows the round trip (`14 ms`, `<1 ms`). `-`
+means no reply within 2 seconds (many firewalls drop ping although ssh
+works), `!` that the host name can't be resolved, `…` that no answer has
+arrived yet. ping does not know `~/.ssh/config` aliases, so an alias shows
+`!`. Servers behind a jump host show `jump` and are not pinged, because a
+ping from here would not say anything about them. The list never waits for
+ping. With the column, TARGET appears from 96 terminal columns on. Turn it
+off with `ping = 0`.
 
 ### Status page
 

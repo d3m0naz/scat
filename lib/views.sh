@@ -12,12 +12,14 @@ SC_FORM_ORIG= SC_FORM_RESULT= SC_FORM_ERRKEY=
 # selectable) or "s" (server), SC_LIST_VAL[i] the group or server name.
 # Without any group the rows are the servers in config order. With groups:
 # named groups A-Z, servers A-Z within a group, then "ungrouped".
+# $1 (default: the group_headings setting) turns the heading rows on (1) or
+# off (0); the order stays the same. SC_LIST_HEADINGS=1 if headings are shown.
 declare -ga SC_LIST_KIND=() SC_LIST_VAL=()
-SC_LIST_GROUPED=0
+SC_LIST_GROUPED=0 SC_LIST_HEADINGS=0
 
 sc_list_build() {
-    local name g last=$'\1' line
-    SC_LIST_KIND=() SC_LIST_VAL=() SC_LIST_GROUPED=0
+    local headings=${1:-${SC_SET[group_headings]:-1}} name g last=$'\1' line
+    SC_LIST_KIND=() SC_LIST_VAL=() SC_LIST_GROUPED=0 SC_LIST_HEADINGS=0
     for name in "${SC_SERVERS[@]}"; do
         [[ -n ${SC_SRV[$name|group]} ]] && { SC_LIST_GROUPED=1; break; }
     done
@@ -25,10 +27,11 @@ sc_list_build() {
         for name in "${SC_SERVERS[@]}"; do SC_LIST_KIND+=(s) SC_LIST_VAL+=("$name"); done
         return 0
     fi
+    ((headings == 1)) && SC_LIST_HEADINGS=1
     # "0group<TAB>name" for named groups, "1<TAB>name" for the rest, so that
     # ungrouped servers sort last. Names and groups contain no control chars.
     while IFS=$'\t' read -r g name; do
-        if [[ $g != "$last" ]]; then
+        if ((SC_LIST_HEADINGS)) && [[ $g != "$last" ]]; then
             last=$g
             SC_LIST_KIND+=(h)
             if [[ $g == 1 ]]; then SC_LIST_VAL+=(ungrouped); else SC_LIST_VAL+=("${g#0}"); fi
@@ -85,7 +88,7 @@ sc_list_nav() {
 }
 
 # First visible row for selection $1 in a window of $3 rows, from the
-# previous top $2. With groups the first line always shows a group heading:
+# previous top $2. With group headings the first line always shows one:
 # if the top row is a server, its heading is drawn in place of it ("sticky")
 # and SC_LIST_STICKY names the group. REPLY=top.
 sc_list_scroll() {
@@ -97,7 +100,7 @@ sc_list_scroll() {
     if ((top == sel && sel > 0)) && [[ ${SC_LIST_KIND[sel - 1]} == h ]] && ((h > 1)); then
         top=$((sel - 1))
     fi
-    if ((SC_LIST_GROUPED && n > 0 && h > 1)) && [[ ${SC_LIST_KIND[top]} == s ]]; then
+    if ((SC_LIST_HEADINGS && n > 0 && h > 1)) && [[ ${SC_LIST_KIND[top]} == s ]]; then
         sc_ui_scroll "$sel" "$top" $((h - 1)) "$n"
         top=$REPLY
         if [[ ${SC_LIST_KIND[top]} == s ]]; then
@@ -109,8 +112,21 @@ sc_list_scroll() {
     REPLY=$top
 }
 
+# Key t: turns the group headings on or off for this session. settings.conf
+# is not written; group_headings there is only the start value. Only the rows
+# are rebuilt (no new fetch, pings go on). $1 = selected row; REPLY = row of
+# the same server afterwards.
+sc_list_toggle_headings() {
+    local sel=$1 name=
+    [[ ${SC_LIST_KIND[sel]-} == s ]] && name=${SC_LIST_VAL[sel]}
+    SC_SET[group_headings]=$((1 - ${SC_SET[group_headings]:-1}))
+    sc_list_build
+    [[ -n $name ]] && sc_list_row "$name" && return 0
+    sc_list_fix "$sel" 1
+}
+
 sc_view_servers() {
-    local sel=0 top=0 dirty=1 last_fetch=0 n name
+    local sel=0 top=0 dirty=1 last_fetch=0 n name line
     sc_list_build
     sc_list_fix 0 1; sel=$REPLY
     while :; do
@@ -120,6 +136,7 @@ sc_view_servers() {
         sc_ui_check_resize && dirty=1
         if ((EPOCHSECONDS - last_fetch >= SC_SET[list_refresh])); then
             sc_fetch_all
+            ((SC_SET[ping])) && sc_ping_all
             last_fetch=$EPOCHSECONDS
             dirty=1
         fi
@@ -146,6 +163,7 @@ sc_view_servers() {
                     sc_list_build
                     sc_list_row "$SC_FORM_RESULT" && sel=$REPLY
                     sc_fetch_async "$SC_FORM_RESULT"
+                    ((SC_SET[ping])) && sc_ping_async "$SC_FORM_RESULT"
                 fi
                 ;;
             e)
@@ -153,6 +171,7 @@ sc_view_servers() {
                     sc_list_build
                     sc_list_row "$SC_FORM_RESULT" && sel=$REPLY
                     sc_fetch_async "$SC_FORM_RESULT"
+                    ((SC_SET[ping])) && sc_ping_async "$SC_FORM_RESULT"
                 fi
                 ;;
             d)
@@ -160,6 +179,7 @@ sc_view_servers() {
                 if sc_ui_confirm "Delete server '$name'?"; then
                     if sc_server_delete "$name"; then
                         sc_metrics_clear "$name"
+                        unset "SC_PING[$name]"
                         sc_msg info "Deleted '$name'"
                         sc_list_build
                         sc_list_fix "$sel" 1; sel=$REPLY
@@ -179,6 +199,13 @@ sc_view_servers() {
                 fi
                 ;;
             s) [[ -n $name ]] && { sc_ssh_interactive "$name" || sc_msg error "$SC_ERR"; } ;;
+            t)
+                sc_list_toggle_headings "$sel"
+                sel=$REPLY
+                if ((SC_SET[group_headings])); then line=on; else line=off; fi
+                ((SC_LIST_GROUPED)) || line+="; no server has a group yet"
+                sc_msg info "Group headings $line"
+                ;;
             r)
                 last_fetch=0
                 sc_msg info "Refreshing all servers${SC_G_ELL}"
@@ -222,6 +249,16 @@ sc_server_cells() {
     fi
 }
 
+# Display value and color of the PING cell of server $1 in REPLY / CELL_PING_C.
+sc_ping_cell() {
+    REPLY=${SC_PING[$1]-} CELL_PING_C=
+    case $REPLY in
+        '') REPLY=$SC_G_ELL CELL_PING_C=$C_DIM ;;
+        - | jump) CELL_PING_C=$C_DIM ;;
+        '!') CELL_PING_C=$C_CRIT ;;
+    esac
+}
+
 # One group heading row: "── production ──" in the accent color.
 sc_list_heading() {
     sc_fit "$SC_G_HLINE$SC_G_HLINE $1 $SC_G_HLINE$SC_G_HLINE" $((SC_COLS - 1))
@@ -230,11 +267,12 @@ sc_list_heading() {
 
 sc_draw_servers() {
     local sel=$1 top=$2 n=${#SC_SERVERS[@]} rows=${#SC_LIST_KIND[@]} h=$((SC_ROWS - 4)) i name line style mark plural=s
-    local nw=16 hw=0 cw=5 mw=5 lw=6 uw=8 fixed iw
+    local nw=16 hw=0 pw=0 cw=5 mw=5 lw=6 uw=8 fixed iw
     ((n == 1)) && plural=
+    ((SC_SET[ping])) && pw=7
     printf -v line '%(%H:%M:%S)T' -1
     sc_ui_begin_frame "Servers" "$n server$plural $SC_G_SEP $line" || return
-    fixed=$((3 + nw + 1 + cw + 1 + mw + 1 + lw + 1 + uw + 1))
+    fixed=$((3 + nw + 1 + (pw ? pw + 1 : 0) + cw + 1 + mw + 1 + lw + 1 + uw + 1))
     if ((SC_COLS - fixed >= 40)); then
         hw=$(((SC_COLS - fixed) / 2))
         ((hw > 32)) && hw=32
@@ -243,6 +281,7 @@ sc_draw_servers() {
 
     sc_fit "NAME" "$nw"; line="   $REPLY "
     if ((hw)); then sc_fit "TARGET" "$hw"; line+="$REPLY "; fi
+    if ((pw)); then sc_fit_right "PING" "$pw"; line+="$REPLY "; fi
     sc_fit_right "CPU" "$cw"; line+="$REPLY "
     sc_fit_right "MEM" "$mw"; line+="$REPLY "
     sc_fit_right "LOAD" "$lw"; line+="$REPLY "
@@ -276,6 +315,10 @@ sc_draw_servers() {
             sc_server_target "$name"
             sc_fit "$REPLY" "$hw"; line+="$REPLY "
         fi
+        if ((pw)); then
+            sc_ping_cell "$name"
+            sc_fit_right "$REPLY" "$pw"; line+="$CELL_PING_C$REPLY$C_NORM "
+        fi
         sc_fit_right "$CELL_CPU" "$cw"; line+="$CELL_CPU_C$REPLY$C_NORM "
         sc_fit_right "$CELL_MEM" "$mw"; line+="$CELL_MEM_C$REPLY$C_NORM "
         sc_fit_right "$CELL_LOAD" "$lw"; line+="$REPLY "
@@ -283,9 +326,10 @@ sc_draw_servers() {
         sc_fit "$CELL_INFO" "$iw"; line+="$CELL_INFO_C$REPLY$C_NORM"
         sc_frame_add "$line$C_RESET"
     done
-    # J/K (reorder) is listed in the help screen; the footer has to fit 80 columns.
-    sc_ui_end_frame "$SC_G_UPDOWN" move "$SC_G_ENTER" details a add e edit d delete \
-        s ssh r refresh '?' help q quit
+    # J/K (reorder) is listed in the help screen; the footer has to fit 80
+    # columns, hence "open", "del" and "grp" (exactly 80 with all keys).
+    sc_ui_end_frame "$SC_G_UPDOWN" move "$SC_G_ENTER" open a add e edit d del \
+        s ssh r refresh t grp '?' help q quit
 }
 
 # --- server detail ------------------------------------------------------------
@@ -766,7 +810,10 @@ Everywhere
 Server list
   a  add server       e  edit       d  delete      J/K  move down/up
   s  interactive ssh  r  refresh    ?  this help
+  t  group headings on/off for this session (start value: group_headings)
   With groups: sorted by group and name; J/K reorders only without groups.
+  PING: one ping from here to the host per refresh; - no reply, ! unknown
+  host, jump: behind a jump host. Off with ping = 0 in settings.conf.
 
 Server detail
   p  processes        s  ssh        x  snippets    e  edit server
