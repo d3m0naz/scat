@@ -4,7 +4,9 @@
  * invented; addresses are from the documentation ranges 192.0.2.0/24 and
  * 203.0.113.0/24.
  *
- * Frames are 80x24 like the real minimum terminal. ScatDemo.frame() builds
+ * Frames are 24 rows high and at least 80 columns wide, like the real
+ * minimum terminal; in the browser the width follows the demo box, so the
+ * frame fills it the way scat fills a wider terminal. ScatDemo.frame() builds
  * one frame as HTML from a plain state object and has no DOM access, so it
  * can be checked outside a browser. With prefers-reduced-motion the server
  * list is shown as a still frame and nothing moves until the play button is
@@ -12,7 +14,13 @@
 (function (global) {
   "use strict";
 
-  var COLS = 80, ROWS = 24;
+  var MIN_COLS = 80, MAX_COLS = 132, COLS = MIN_COLS, ROWS = 24;
+
+  // Sets the frame width in columns (clamped to 80..132); returns it.
+  function setCols(n) {
+    COLS = Math.max(MIN_COLS, Math.min(MAX_COLS, Math.floor(n) || MIN_COLS));
+    return COLS;
+  }
   var EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
   // Groups A-Z, servers A-Z within a group, ungrouped last (as scat sorts).
@@ -134,8 +142,10 @@
     var rows = [], i, s, r, lastGroup = null, v, g;
     rows.push(header("Servers", SERVERS.length + " servers · " + clock(st.t)));
     r = new Row();
-    // At 80 columns scat has no room for the TARGET column (it needs 40 free).
-    r.add("   " + fit("NAME", 16) + " " + right("PING", 7) + " " + right("CPU", 5) + " " + right("TEMP", 5) + " " + right("MEM", 5) + " " +
+    // 62 columns are fixed; scat adds the TARGET column (at most 32 wide)
+    // once 40 are free, i.e. from 102 columns.
+    var hw = COLS - 62 >= 40 ? Math.min(32, Math.floor((COLS - 62) / 2)) : 0;
+    r.add("   " + fit("NAME", 16) + " " + (hw ? fit("TARGET", hw) + " " : "") + right("PING", 7) + " " + right("CPU", 5) + " " + right("TEMP", 5) + " " + right("MEM", 5) + " " +
           right("LOAD", 6) + " " + right("UPTIME", 8) + " STATUS", "d");
     rows.push(r.html());
     for (i = 0; i < SERVERS.length; i++) {
@@ -152,6 +162,7 @@
       r.add("●", (on ? cls + " " : "") + "ok");
       r.add(" ", cls);
       r.add(fit(s.name, 16), (cls ? cls + " " : "") + "b");
+      if (hw) r.add(" " + fit(s.target, hw), cls);
       r.add(" " + right(Math.round(v.ping) + " ms", 7) + " " + right(Math.round(v.cpu) + "%", 5) + " " + right(tempOf(s, v) + "°C", 5) + " " + right(Math.round(v.mem) + "%", 5) + " " +
             right(v.load.toFixed(2), 6) + " " + right(s.up, 8) + " ", cls);
       r.add(fit(s.os, COLS - r.len), (cls ? cls + " " : "") + "d");
@@ -165,7 +176,7 @@
   }
 
   function barLine(label, pct, text) {
-    var b = bar(pct, 26), r = new Row();
+    var b = bar(pct, Math.floor(COLS / 3)), r = new Row();
     r.add("  " + fit(label, 12), "b").add(b[0], pct >= 90 ? "h" : pct >= 75 ? "w" : "ok").add(b[1], "d");
     r.add(" " + right(Math.round(pct) + "%", 5) + "  ").add(text, "d");
     return r.html();
@@ -249,7 +260,8 @@
     return out;
   }
 
-  global.ScatDemo = { frame: frame, liveAt: liveAt, servers: SERVERS, COLS: COLS, ROWS: ROWS,
+  global.ScatDemo = { frame: frame, liveAt: liveAt, servers: SERVERS, setCols: setCols, ROWS: ROWS,
+                      cols: function () { return COLS; },
                       textOf: function (html) { return html.replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"); } };
 
   // --- browser driver ------------------------------------------------------------
@@ -269,6 +281,28 @@
   var running = false, userPaused = false, hiddenHalt = false, dueAt = 0, pausedAt = 0;
 
   function draw() { screen.innerHTML = frame(st); }
+
+  // Columns that fit into the box at the current font size: the width of
+  // ten measured characters gives one cell.
+  function fitCols() {
+    var probe = document.createElement("span"), cs = global.getComputedStyle(screen), cell, inner;
+    probe.textContent = "0000000000";
+    probe.style.visibility = "hidden";
+    probe.style.position = "absolute";
+    screen.appendChild(probe);
+    cell = probe.getBoundingClientRect().width / 10;
+    screen.removeChild(probe);
+    inner = screen.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return cell > 0 ? setCols(inner / cell) : COLS;
+  }
+  var resizeTimer = null;
+  global.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      var before = COLS;
+      if (fitCols() !== before && st) draw();
+    }, 100);
+  });
 
   // Script of one round: [duration ms, action]. Actions change the state;
   // the detail view also animates continuously between steps.
@@ -392,5 +426,6 @@
     if (reduce.addEventListener) reduce.addEventListener("change", function () { userPaused = false; decide(); });
     else if (reduce.addListener) reduce.addListener(function () { userPaused = false; decide(); });
   }
+  fitCols();
   decide();
 })(this);

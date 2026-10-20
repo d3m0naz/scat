@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 848 160" width="848" height="160" role="img" aria-label="scat">
+  <title>scat</title>
+  <!-- scat logo: the website's paw as the prompt, then the name in a 5x7
+       terminal font and a (static) block cursor, on a CRT tile with scanlines.
+       Wide variant: on the right a quiet status panel (load graph, a
+       three-unit server rack, a thermometer) on a network line.
+       The letters are drawn pixels, not text, so the logo looks the same
+       without any font installed. Light variant. -->
+  <defs>
+    <radialGradient id="tube" cx="30%" cy="45%" r="80%">
+      <stop offset="0" class="bg0"/>
+      <stop offset="1" class="bg1"/>
+    </radialGradient>
+    <pattern id="lines" width="5" height="5" patternUnits="userSpaceOnUse">
+      <rect width="5" height="1.5" class="scan"/>
+    </pattern>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="ledglow" x="-150%" y="-150%" width="400%" height="400%">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="tile"><rect width="848" height="160" rx="12"/></clipPath>
+  </defs>
+  <style>
+    .bg0 { stop-color: #fbf8ee; }
+    .bg1 { stop-color: #ece6d2; }
+    .frame { stroke: #bdb596; }
+    .name, .cursor { fill: #1a6b2c; filter: none; }
+    .paw { fill: #0a6a8a; filter: none; }
+    .scan { fill: #5c5436; opacity: 0.07; }
+    .line { stroke: #6b7a5c; opacity: 0.6; fill: none; }
+    .graph { stroke: #1a6b2c; fill: none; opacity: 0.85; }
+    .area { fill: #1a6b2c; opacity: 0.07; }
+    .led { fill: #1a6b2c; }
+    .led-warn { fill: #8a6100; }
+    .bay { fill: #6b7a5c; opacity: 0.4; }
+    .heat { fill: #8a6100; opacity: 0.8; }
+    .node { fill: #0a6a8a; opacity: 0.75; }
+  </style>
+  <g clip-path="url(#tile)">
+    <rect width="848" height="160" fill="url(#tube)"/>
+    <g class="paw" transform="translate(20.5 28.25) scale(0.9)">
+      <ellipse cx="60" cy="78" rx="30" ry="26"/>
+      <ellipse cx="26" cy="46" rx="11" ry="14" transform="rotate(-18 26 46)"/>
+      <ellipse cx="44" cy="26" rx="11" ry="15" transform="rotate(-6 44 26)"/>
+      <ellipse cx="76" cy="26" rx="11" ry="15" transform="rotate(6 76 26)"/>
+      <ellipse cx="94" cy="46" rx="11" ry="14" transform="rotate(18 94 46)"/>
+    </g>
+    <g class="name">
+      <rect x="155" y="65" width="10" height="10"/>
+      <rect x="165" y="65" width="10" height="10"/>
+      <rect x="175" y="65" width="10" height="10"/>
+      <rect x="185" y="65" width="10" height="10"/>
+      <rect x="145" y="75" width="10" height="10"/>
+      <rect x="155" y="85" width="10" height="10"/>
+      <rect x="165" y="85" width="10" height="10"/>
+      <rect x="175" y="85" width="10" height="10"/>
+      <rect x="185" y="95" width="10" height="10"/>
+      <rect x="145" y="105" width="10" height="10"/>
+      <rect x="155" y="105" width="10" height="10"/>
+      <rect x="165" y="105" width="10" height="10"/>
+      <rect x="175" y="105" width="10" height="10"/>
+      <rect x="215" y="65" width="10" height="10"/>
+      <rect x="225" y="65" width="10" height="10"/>
+      <rect x="235" y="65" width="10" height="10"/>
+      <rect x="245" y="65" width="10" height="10"/>
+      <rect x="205" y="75" width="10" height="10"/>
+      <rect x="205" y="85" width="10" height="10"/>
+      <rect x="205" y="95" width="10" height="10"/>
+      <rect x="215" y="105" width="10" height="10"/>
+      <rect x="225" y="105" width="10" height="10"/>
+      <rect x="235" y="105" width="10" height="10"/>
+      <rect x="245" y="105" width="10" height="10"/>
+      <rect x="275" y="65" width="10" height="10"/>
+      <rect x="285" y="65" width="10" height="10"/>
+      <rect x="295" y="65" width="10" height="10"/>
+      <rect x="305" y="75" width="10" height="10"/>
+      <rect x="275" y="85" width="10" height="10"/>
+      <rect x="285" y="85" width="10" height="10"/>
+      <rect x="295" y="85" width="10" height="10"/>
+      <rect x="305" y="85" width="10" height="10"/>
+      <rect x="265" y="95" width="10" height="10"/>
+      <rect x="305" y="95" width="10" height="10"/>
+      <rect x="275" y="105" width="10" height="10"/>
+      <rect x="285" y="105" width="10" height="10"/>
+      <rect x="295" y="105" width="10" height="10"/>
+      <rect x="305" y="105" width="10" height="10"/>
+      <rect x="335" y="45" width="10" height="10"/>
+      <rect x="335" y="55" width="10" height="10"/>
+      <rect x="325" y="65" width="10" height="10"/>
+      <rect x="335" y="65" width="10" height="10"/>
+      <rect x="345" y="65" width="10" height="10"/>
+      <rect x="355" y="65" width="10" height="10"/>
+      <rect x="335" y="75" width="10" height="10"/>
+      <rect x="335" y="85" width="10" height="10"/>
+      <rect x="335" y="95" width="10" height="10"/>
+      <rect x="345" y="105" width="10" height="10"/>
+      <rect x="355" y="105" width="10" height="10"/>
+      <rect x="365" y="105" width="10" height="10"/>
+    </g>
+    <g class="panel" stroke-width="1.5">
+      <path class="line" d="M478 115 H608 M478 45 V115" stroke-dasharray="2 4"/>
+      <path class="area" d="M478 98 490 94 502 100 514 86 526 90 538 72 550 80 562 66 574 76 586 60 598 68 608 58 V115 H478 Z"/>
+      <polyline class="graph" points="478 98 490 94 502 100 514 86 526 90 538 72 550 80 562 66 574 76 586 60 598 68 608 58" stroke-width="2" stroke-linejoin="round"/>
+      <circle class="led" cx="608" cy="58" r="3"/>
+      <rect class="line" x="640" y="45" width="120" height="20" rx="2"/>
+      <circle class="led" cx="651" cy="55" r="3"/>
+      <circle class="led" cx="661" cy="55" r="3" opacity="0.45"/>
+      <rect class="bay" x="700" y="51" width="10" height="8" rx="1"/>
+      <rect class="bay" x="714" y="51" width="10" height="8" rx="1"/>
+      <rect class="bay" x="728" y="51" width="10" height="8" rx="1"/>
+      <rect class="bay" x="742" y="51" width="10" height="8" rx="1"/>
+      <rect class="line" x="640" y="70" width="120" height="20" rx="2"/>
+      <circle class="led-warn" cx="651" cy="80" r="3"/>
+      <circle class="led" cx="661" cy="80" r="3" opacity="0.45"/>
+      <rect class="bay" x="700" y="76" width="10" height="8" rx="1"/>
+      <rect class="bay" x="714" y="76" width="10" height="8" rx="1"/>
+      <rect class="bay" x="728" y="76" width="10" height="8" rx="1"/>
+      <rect class="bay" x="742" y="76" width="10" height="8" rx="1"/>
+      <rect class="line" x="640" y="95" width="120" height="20" rx="2"/>
+      <circle class="led" cx="651" cy="105" r="3"/>
+      <circle class="led" cx="661" cy="105" r="3" opacity="0.45"/>
+      <rect class="bay" x="700" y="101" width="10" height="8" rx="1"/>
+      <rect class="bay" x="714" y="101" width="10" height="8" rx="1"/>
+      <rect class="bay" x="728" y="101" width="10" height="8" rx="1"/>
+      <rect class="bay" x="742" y="101" width="10" height="8" rx="1"/>
+      <rect class="line" x="793" y="45" width="12" height="58" rx="6"/>
+      <circle class="line" cx="799" cy="109" r="9"/>
+      <rect class="heat" x="796" y="72" width="6" height="34" rx="3"/>
+      <circle class="heat" cx="799" cy="109" r="5.5"/>
+      <path class="line" d="M810 52 h6"/>
+      <path class="line" d="M810 64 h6"/>
+      <path class="line" d="M810 76 h6"/>
+      <path class="line" d="M810 88 h6"/>
+      <path class="line" d="M478 133 H816" stroke-dasharray="1 5" stroke-linecap="round"/>
+      <path class="line" d="M543 115 V133"/>
+      <path class="line" d="M700 115 V133"/>
+      <path class="line" d="M799 118 V133"/>
+      <rect class="node" x="540" y="130" width="6" height="6"/>
+      <rect class="node" x="697" y="130" width="6" height="6"/>
+      <rect class="node" x="796" y="130" width="6" height="6"/>
+    </g>
+    <rect class="cursor" x="385" y="45" width="50" height="70"/>
+    <rect width="848" height="160" fill="url(#lines)"/>
+  </g>
+  <rect class="frame" x="5" y="5" width="838" height="150" rx="8" fill="none" stroke-width="2"/>
+</svg>

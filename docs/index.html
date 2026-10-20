@@ -60,20 +60,23 @@
   }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 16px 48px; }
 
-  header { padding: 24px 0 8px; border-bottom: 1px solid var(--rule); }
-  .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .bar .title { color: var(--sel-fg); background: var(--sel); padding: 0 8px; font-weight: bold; }
+  /* Vertical rhythm: 16px inside a block, 40px between sections. */
+  header { padding: 16px 0 0; }
+  .bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
   .toggle {
     font: inherit; color: var(--fg); background: transparent;
     border: 1px solid var(--fg); padding: 2px 10px; cursor: pointer;
   }
   .toggle:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .hero { display: flex; gap: 24px; align-items: center; padding: 24px 0; flex-wrap: wrap; }
+  /* Hero: the logo spans the full column, as wide as the boxes below it;
+     the tagline sits underneath. */
+  .hero { padding: 16px 0 0; }
   /* Logo: light and dark variant, switched like the colours above
-     (system setting, or the theme button). */
-  .logo { width: 100%; max-width: 470px; }
-  .logo img { display: block; width: 100%; height: auto; }
+     (system setting, or the theme button). The wide logo fills the column;
+     on narrow screens the compact original is shown instead. */
+  .logo { width: 100%; }
+  .logo picture, .logo img { display: block; width: 100%; height: auto; }
   .logo .logo-dark { display: none; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) .logo .logo-light { display: none; }
@@ -82,8 +85,9 @@
   :root[data-theme="dark"] .logo .logo-light { display: none; }
   :root[data-theme="dark"] .logo .logo-dark { display: block; }
   h1 { margin: 0; font-size: 32px; letter-spacing: 0.04em; color: var(--accent); }
-  .tag { margin: 6px 0 0; color: var(--dim); }
-  .hero .tag { font-size: 14px; }
+  .tag { margin: 6px 0 0; color: var(--dim); font-size: 14px; }
+  .hero .lead { margin-top: 16px; font-size: 16px; color: var(--fg); }
+  .hero p:last-child { margin-bottom: 0; }
 
   h2 {
     font-size: 18px; margin: 40px 0 12px; color: var(--hot);
@@ -119,11 +123,12 @@
   .screen pre { margin: 0; border-color: var(--fg); }
 
   /* Animated demo (demo.js): an 80x24 terminal. The font shrinks with the
-     viewport so all 80 columns fit without horizontal scrolling. */
+     viewport so all 80 columns fit without horizontal scrolling; the box
+     spans the column, flush with the logo and the install box. */
   .demo { overflow: visible; }
   .demo pre {
     overflow: hidden; white-space: pre; padding: 12px 14px;
-    width: fit-content; max-width: 100%;
+    width: 100%;
     font-size: clamp(5px, calc((100vw - 62px) / 48.5), 14px); line-height: 1.3;
   }
   .demo .inv { background: var(--sel); color: var(--sel-fg); }
@@ -140,7 +145,7 @@
   .copy-btn { margin: -4px 0 4px; }
   /* Secondary text under the install box: smaller and dimmed. */
   .install-note { margin: 6px 0 0; font-size: 14px; color: var(--dim); }
-  .install-more { margin: 2px 0 24px; }
+  .install-more { margin: 2px 0 0; }
   .install-more summary { font-size: 14px; color: var(--dim); cursor: pointer; }
   .install-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .install-note code { color: var(--dim); }
@@ -158,19 +163,24 @@
 
 <header>
   <div class="bar">
-    <span class="title">scat</span>
     <button class="toggle" id="theme" type="button" aria-pressed="false">[ dark mode: off ]</button>
   </div>
 </header>
 
 <section class="hero" aria-labelledby="top">
   <div class="logo">
-    <img class="logo-light" src="logo-light.svg" width="470" height="160" alt="scat logo">
-    <img class="logo-dark" src="logo-dark.svg" width="470" height="160" alt="" aria-hidden="true">
+    <picture class="logo-light">
+      <source media="(max-width: 560px)" srcset="logo-light.svg" width="470" height="160">
+      <img src="logo-wide-light.svg" width="848" height="160" alt="scat logo">
+    </picture>
+    <picture class="logo-dark">
+      <source media="(max-width: 560px)" srcset="logo-dark.svg" width="470" height="160">
+      <img src="logo-wide-dark.svg" width="848" height="160" alt="" aria-hidden="true">
+    </picture>
   </div>
   <div>
     <h1 id="top" class="sr-only">scat</h1>
-    <p class="tag"><strong>watch and manage your servers over SSH, from the terminal.</strong></p>
+    <p class="tag lead"><strong>watch and manage your servers over SSH, from the terminal.</strong></p>
     <p class="tag">scat 0.2.3 · released <time datetime="2026-10-19">2026-10-19</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.3">release notes</a></p>
   </div>
 </section>
