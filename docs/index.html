@@ -170,7 +170,7 @@
   </div>
   <div>
     <h1 id="top" class="sr-only">scat</h1>
-    <p class="tag">watch and manage your servers over SSH, from the terminal.</p>
+    <p class="tag"><strong>watch and manage your servers over SSH, from the terminal.</strong></p>
     <p class="tag">scat 0.2.3 · released <time datetime="2026-10-19">2026-10-19</time> · <a href="https://github.com/d3m0naz/scat/releases/tag/v0.2.3">release notes</a></p>
   </div>
 </section>
@@ -215,15 +215,6 @@
 <p class="caption" id="demo-caption">Demo with made-up servers and numbers: the cursor picks a server, Enter opens its live metrics, Esc goes back.</p>
 </section>
 
-<h2 id="bash-5">bash 5 or newer</h2>
-<p>scat is a Bash script that runs on the machine you work on. It is written for any system with Bash 5 or newer and the usual Unix tools. So far it has been run on macOS (Apple Silicon); Linux and FreeBSD as the machine running scat have not been tested yet. Check your version with <code>bash --version</code>.</p>
-<table>
-  <tr><th>system</th><th>how to get Bash 5</th></tr>
-  <tr><td>macOS</td><td><code>brew install bash</code>, then put <code>/opt/homebrew/bin</code> first in <code>PATH</code>. The system <code>/bin/bash</code> is 3.2 and is not supported.</td></tr>
-  <tr><td>Linux</td><td>Usually installed already; otherwise <code>apt install bash</code>, <code>dnf install bash</code> or <code>pacman -S bash</code>.</td></tr>
-  <tr><td>FreeBSD /<br>OPNsense</td><td><code>pkg install bash</code></td></tr>
-</table>
-
 <h2>what it does</h2>
 <ul>
   <li>Keeps a list of servers: add, edit, delete and reorder, with ping times, group headings (can be turned off) and optional jump hosts.</li>
@@ -236,6 +227,14 @@
   <li>Runs one-shot checks from scripts: <code>scat --check web1</code>.</li>
   <li>Five colour themes: default, light, solarized, nord and high-contrast, set in <code>settings.conf</code> or with <code>--theme</code>.</li>
 </ul>
+
+<h2 id="bash-5">bash 5 or newer</h2>
+<p>scat is a Bash script that runs on the machine you work on. It is written for any system with Bash 5 or newer and the usual Unix tools. So far it has been run on macOS (Apple Silicon); Linux and FreeBSD as the machine running scat have not been tested yet. Check your version with <code>bash --version</code>.</p>
+<table>
+  <tr><th>system</th><th>how to get Bash 5</th></tr>
+  <tr><td>macOS</td><td><code>brew install bash</code>, then put <code>/opt/homebrew/bin</code> first in <code>PATH</code>. The system <code>/bin/bash</code> is 3.2 and is not supported.</td></tr>
+  <tr><td>Linux</td><td>Usually installed already; otherwise <code>apt install bash</code>, <code>dnf install bash</code> or <code>pacman -S bash</code>.</td></tr>
+</table>
 
 <h2>principles</h2>
 <ul>
@@ -280,6 +279,7 @@
 
 <footer>
   <p>scat 0.2.3 · MIT licence · &copy; 2026 d3m0naz</p>
+  <p>“Programmed by Claude, with some human input. (Will be turned off soon enough.)”</p>
 </footer>
 
 </div>
