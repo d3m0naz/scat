@@ -48,7 +48,6 @@ Check your version with `bash --version`.
 |---|---|
 | macOS | `brew install bash`, then put `/opt/homebrew/bin` first in your `PATH` |
 | Linux | Usually there already. Otherwise `apt install bash` (or `dnf` / `pacman`) |
-| FreeBSD / OPNsense | `pkg install bash` |
 
 The macOS system Bash (version 3.2) is too old and is not supported.
 
