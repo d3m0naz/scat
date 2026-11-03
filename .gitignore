@@ -15,3 +15,6 @@ servers.conf
 # Test artifacts (tests/tui_smoke.exp run without a config dir)
 .stty.before
 .stty.after
+
+# Local handoff notes between sessions (not for the repo)
+handoff-for-peer-sessions.md
