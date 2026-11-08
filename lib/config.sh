@@ -29,8 +29,10 @@ sc_config_default_dir
 SC_CONFIG_DIR_DEFAULT=$REPLY
 SC_CONFIG_DIR=$SC_CONFIG_DIR_DEFAULT
 SC_SERVER_FIELDS=(host port user identity jump group)
+# Per-server state kept outside the edit form: SC_SRV[<name>|disabled] is 1
+# for a disabled server (not polled, no ssh connections), empty otherwise.
 
-declare -ga SC_SERVERS=() SC_SNIPPETS=() SC_CONFIG_WARNINGS=()
+declare -ga SC_SERVERS=() SC_SNIPPETS=() SC_CONFIG_WARNINGS=() SC_ENABLED=()
 declare -gA SC_SRV=()  # "<name>|<field>" -> value
 declare -gA SC_SNIP=() # snippet name -> command
 
@@ -162,6 +164,7 @@ _sc_server_section() {
     fi
     SC_SERVERS+=("$name")
     for f in "${SC_SERVER_FIELDS[@]}"; do SC_SRV[$name|$f]=; done
+    SC_SRV[$name|disabled]=
 }
 
 _sc_server_key() {
@@ -173,6 +176,7 @@ _sc_server_key() {
         identity) sc_valid_identity_syntax "$val" ;;
         jump) sc_valid_jump "$val" ;;
         group) sc_valid_group "$val" ;;
+        disabled) sc_valid_flag "$val" ;;
         *)
             sc_config_warn "servers.conf:$4: unknown key '$key' ignored"
             return 0
@@ -183,6 +187,8 @@ _sc_server_key() {
         sc_config_warn "servers.conf:$4: [$name] $key ignored: $SC_ERR"
         return 0
     fi
+    # "disabled = 0" is the same as no key; only 1 is kept.
+    [[ $key == disabled && $val == 0 ]] && val=
     SC_SRV[$name|$key]=$val
 }
 
@@ -190,12 +196,13 @@ sc_config_emit_servers() {
     local name f
     printf '# scat servers. Rewritten by scat; comments are not preserved.\n'
     printf '# Authentication uses SSH keys or ssh-agent only - never put passwords here.\n'
-    printf '# Keys: host (required), port, user, identity, jump, group\n'
+    printf '# Keys: host (required), port, user, identity, jump, group, disabled (1 = not polled)\n'
     for name in "${SC_SERVERS[@]}"; do
         printf '\n[%s]\n' "$name"
         for f in "${SC_SERVER_FIELDS[@]}"; do
             [[ -n ${SC_SRV[$name|$f]} ]] && printf '%s = %s\n' "$f" "${SC_SRV[$name|$f]}"
         done
+        [[ ${SC_SRV[$name|disabled]-} == 1 ]] && printf 'disabled = 1\n'
     done
     return 0
 }
@@ -206,6 +213,30 @@ sc_config_save_servers() {
 
 sc_server_exists() {
     [[ -n ${SC_SRV[$1|host]+x} ]]
+}
+
+# Status 0 if server $1 is disabled (disabled = 1 in servers.conf).
+sc_server_disabled() {
+    [[ ${SC_SRV[$1|disabled]-} == 1 ]]
+}
+
+# Sets ($2 = 1) or clears ($2 = 0) the disabled flag of server $1 and saves
+# the file. Connections and polling are handled by the caller.
+sc_server_set_disabled() {
+    local name=$1 flag=$2
+    sc_server_exists "$name" || { SC_ERR="unknown server '$name'"; return 1; }
+    sc_valid_flag "$flag" || return 1
+    if ((flag)); then SC_SRV[$name|disabled]=1; else SC_SRV[$name|disabled]=; fi
+    sc_config_save_servers
+}
+
+# Servers that are polled (not disabled), in config order, in SC_ENABLED.
+sc_servers_enabled() {
+    local name
+    SC_ENABLED=()
+    for name in "${SC_SERVERS[@]}"; do
+        sc_server_disabled "$name" || SC_ENABLED+=("$name")
+    done
 }
 
 sc_server_index() {
@@ -232,7 +263,7 @@ sc_server_validate() {
 # Creates ($1 empty) or updates/renames server $1 and saves the file.
 # Remaining args: name host port user identity jump group.
 sc_server_upsert() {
-    local orig=$1 name=$2 i f vals
+    local orig=$1 name=$2 i f vals disabled=
     shift
     sc_server_validate "$@" || return 1
     shift
@@ -241,16 +272,19 @@ sc_server_upsert() {
         SC_ERR="a server named '$name' already exists"
         return 1
     fi
+    # The disabled flag is not part of the form; an edit keeps it.
+    [[ -n $orig ]] && disabled=${SC_SRV[$orig|disabled]-}
     if [[ -z $orig ]]; then
         SC_SERVERS+=("$name")
     elif [[ $name != "$orig" ]]; then
         sc_server_index "$orig" || { SC_ERR="unknown server '$orig'"; return 1; }
         SC_SERVERS[REPLY]=$name
-        for f in "${SC_SERVER_FIELDS[@]}"; do unset "SC_SRV[$orig|$f]"; done
+        for f in "${SC_SERVER_FIELDS[@]}" disabled; do unset "SC_SRV[$orig|$f]"; done
     fi
     for i in "${!SC_SERVER_FIELDS[@]}"; do
         SC_SRV[$name|${SC_SERVER_FIELDS[i]}]=${vals[i]-}
     done
+    SC_SRV[$name|disabled]=$disabled
     sc_config_save_servers
 }
 
@@ -258,7 +292,7 @@ sc_server_delete() {
     local name=$1 f
     sc_server_index "$name" || { SC_ERR="unknown server '$name'"; return 1; }
     SC_SERVERS=("${SC_SERVERS[@]:0:REPLY}" "${SC_SERVERS[@]:REPLY+1}")
-    for f in "${SC_SERVER_FIELDS[@]}"; do unset "SC_SRV[$name|$f]"; done
+    for f in "${SC_SERVER_FIELDS[@]}" disabled; do unset "SC_SRV[$name|$f]"; done
     sc_config_save_servers
 }
 

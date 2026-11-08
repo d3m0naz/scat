@@ -132,6 +132,22 @@ sc_list_toggle_temp() {
     REPLY="Temperature in ${SC_G_DEG-}${SC_SET[temp_unit]^^}"
 }
 
+# Key space: disables server $1 (not polled, no ssh; its jobs stop and its
+# ControlMaster is closed) or enables it again. An enabled server is polled
+# from the next refresh on; the toggle itself opens no connection. Message
+# in REPLY; status 1 (SC_ERR) if servers.conf cannot be written.
+sc_server_toggle_disabled() {
+    local name=$1
+    if sc_server_disabled "$name"; then
+        sc_server_set_disabled "$name" 0 || return 1
+        REPLY="Enabled '$name'; polled again from the next refresh"
+    else
+        sc_server_set_disabled "$name" 1 || return 1
+        sc_server_stop "$name"
+        REPLY="Disabled '$name': not polled, connection closed"
+    fi
+}
+
 sc_view_servers() {
     local sel=0 top=0 dirty=1 last_fetch=0 n name line
     sc_list_build
@@ -206,7 +222,22 @@ sc_view_servers() {
                     sc_server_move "$name" -1 && { ((sel--)); sc_list_build; }
                 fi
                 ;;
-            s) [[ -n $name ]] && { sc_ssh_interactive "$name" || sc_msg error "$SC_ERR"; } ;;
+            s)
+                [[ -n $name ]] || continue
+                if sc_server_disabled "$name"; then
+                    sc_msg info "server is disabled, press space to enable"
+                else
+                    sc_ssh_interactive "$name" || sc_msg error "$SC_ERR"
+                fi
+                ;;
+            ' ')
+                [[ -n $name ]] || continue
+                if sc_server_toggle_disabled "$name"; then
+                    sc_msg info "$REPLY"
+                else
+                    sc_msg error "$SC_ERR"
+                fi
+                ;;
             t)
                 sc_list_toggle_headings "$sel"
                 sel=$REPLY
@@ -232,8 +263,12 @@ sc_view_servers() {
 sc_server_cells() {
     local name=$1 rc=${SC_M[$1|rc]-}
     CELL_CPU=- CELL_MEM=- CELL_LOAD=- CELL_UP=- CELL_CPU_C= CELL_MEM_C= CELL_INFO_C=$C_DIM
-    CELL_TEMP=- CELL_TEMP_C=$C_DIM
-    if [[ -z $rc ]]; then
+    CELL_TEMP=- CELL_TEMP_C=$C_DIM CELL_ROW_C= CELL_NAME_C=$C_BOLD
+    if sc_server_disabled "$name"; then
+        # Greyed out, no values: nothing is collected for it.
+        CELL_G=$SC_G_TIMES CELL_G_C=$C_DIM CELL_INFO=disabled
+        CELL_CPU_C=$C_DIM CELL_MEM_C=$C_DIM CELL_ROW_C=$C_DIM CELL_NAME_C=$C_DIM
+    elif [[ -z $rc ]]; then
         CELL_G=$SC_G_HOLLOW
         if [[ -n ${SC_M[$name|loading]-} ]]; then
             CELL_G_C=$C_WARN CELL_INFO="connecting$SC_G_ELL"
@@ -272,9 +307,10 @@ sc_server_cells() {
 # Display value and color of the PING cell of server $1 in REPLY / CELL_PING_C.
 sc_ping_cell() {
     REPLY=${SC_PING[$1]-} CELL_PING_C=
+    sc_server_disabled "$1" && REPLY=off
     case $REPLY in
         '') REPLY=$SC_G_ELL CELL_PING_C=$C_DIM ;;
-        - | jump) CELL_PING_C=$C_DIM ;;
+        - | jump | off) CELL_PING_C=$C_DIM ;;
         '!') CELL_PING_C=$C_CRIT ;;
     esac
 }
@@ -336,10 +372,10 @@ sc_draw_servers() {
         style= mark=' '
         ((i == sel)) && style=$C_SEL mark=$SC_G_SEL
         line="$style$mark$CELL_G_C$CELL_G$C_NORM "
-        sc_fit "$name" "$nw"; line+="$C_BOLD$REPLY$C_NORM "
+        sc_fit "$name" "$nw"; line+="$CELL_NAME_C$REPLY$C_NORM "
         if ((hw)); then
             sc_server_target "$name"
-            sc_fit "$REPLY" "$hw"; line+="$REPLY "
+            sc_fit "$REPLY" "$hw"; line+="$CELL_ROW_C$REPLY$C_NORM "
         fi
         if ((pw)); then
             sc_ping_cell "$name"
@@ -348,13 +384,14 @@ sc_draw_servers() {
         sc_fit_right "$CELL_CPU" "$cw"; line+="$CELL_CPU_C$REPLY$C_NORM "
         if ((tw)); then sc_fit_right "$CELL_TEMP" "$tw"; line+="$CELL_TEMP_C$REPLY$C_NORM "; fi
         sc_fit_right "$CELL_MEM" "$mw"; line+="$CELL_MEM_C$REPLY$C_NORM "
-        sc_fit_right "$CELL_LOAD" "$lw"; line+="$REPLY "
-        sc_fit_right "$CELL_UP" "$uw"; line+="$REPLY "
+        sc_fit_right "$CELL_LOAD" "$lw"; line+="$CELL_ROW_C$REPLY$C_NORM "
+        sc_fit_right "$CELL_UP" "$uw"; line+="$CELL_ROW_C$REPLY$C_NORM "
         sc_fit "$CELL_INFO" "$iw"; line+="$CELL_INFO_C$REPLY$C_NORM"
         sc_frame_add "$line$C_RESET"
     done
-    # J/K (reorder) is listed in the help screen; the footer has to fit 80
-    # columns, hence "open", "del" and "grp" (exactly 80 with all keys).
+    # J/K (reorder) and space (disable) are listed in the help screen; the
+    # footer has to fit 80 columns, hence "open", "del" and "grp" (exactly
+    # 80 with all keys).
     sc_ui_end_frame "$SC_G_UPDOWN" move "$SC_G_ENTER" open a add e edit d del \
         s ssh r refresh t grp '?' help q quit
 }
@@ -368,12 +405,16 @@ sc_view_detail() {
     SC_DET_SCROLL=0
     while :; do
         sc_ui_check_resize && dirty=1
+        # A disabled server: no fetch and no module queries (sc_fetch_async
+        # skips it as well); the view only shows the state.
         if ((EPOCHSECONDS - last >= SC_SET[detail_refresh])); then
             sc_fetch_async "$name"
             last=$EPOCHSECONDS
         fi
         sc_poll_results && dirty=1
-        sc_modules_hook detail_tick "$name" && dirty=1
+        if ! sc_server_disabled "$name"; then
+            sc_modules_hook detail_tick "$name" && dirty=1
+        fi
         if ((dirty)); then
             sc_draw_detail "$name"
             dirty=0
@@ -382,8 +423,23 @@ sc_view_detail() {
         dirty=1
         SC_MSG=
         sc_detail_scroll_key && continue
+        if sc_server_disabled "$name"; then
+            case $SC_KEY in
+                r | p | ENTER | s | x | m)
+                    sc_msg info "server is disabled, press space to enable"
+                    continue
+                    ;;
+            esac
+        fi
         case $SC_KEY in
             ESC | q | LEFT | h) return 0 ;;
+            ' ')
+                if sc_server_toggle_disabled "$name"; then
+                    sc_msg info "$REPLY"
+                else
+                    sc_msg error "$SC_ERR"
+                fi
+                ;;
             r)
                 last=0
                 sc_modules_hook detail_refresh "$name"
@@ -481,7 +537,9 @@ sc_draw_detail() {
     local name=$1 rc=${SC_M[$1|rc]-} status line v used total pct mnt size room n=0 row
     local iface rxv txv h total_rows mod_rows=() before=()
     h=$((SC_ROWS - 3))
-    if [[ -z $rc ]]; then
+    if sc_server_disabled "$name"; then
+        status=disabled
+    elif [[ -z $rc ]]; then
         status="connecting$SC_G_ELL"
     elif ((rc == 0)); then
         printf -v status 'online %s %(%H:%M:%S)T' "$SC_G_SEP" "${SC_M[$name|ts]:-0}"
@@ -500,7 +558,11 @@ sc_draw_detail() {
         sc_frame_add ""
     fi
     sc_frame_add ""
-    if [[ -z $rc ]]; then
+    if sc_server_disabled "$name"; then
+        sc_frame_text "$C_DIM$C_BOLD" "  Disabled: not polled, no ssh connections."
+        sc_frame_add ""
+        sc_frame_text "$C_DIM" "  Press space to enable it; it is polled again from the next refresh."
+    elif [[ -z $rc ]]; then
         sc_frame_text "$C_WARN" "  Connecting to ${SC_SRV[$name|host]}$SC_G_ELL"
     elif ((rc != 0)); then
         sc_frame_text "$C_CRIT$C_BOLD" "  ${SC_M[$name|err]:-connection failed}"
@@ -616,7 +678,11 @@ sc_draw_detail() {
         # Visible content rows and total, e.g. "1-21/33".
         SC_FRAME_STATUS="$((SC_DET_SCROLL + 1))-$((SC_DET_SCROLL + h))/$total_rows"
     fi
-    sc_ui_end_frame p processes s ssh x snippets e edit m modules r refresh esc back
+    if sc_server_disabled "$name"; then
+        sc_ui_end_frame space enable e edit esc back
+    else
+        sc_ui_end_frame p processes s ssh x snippets e edit m modules r refresh esc back
+    fi
 }
 
 # --- processes ----------------------------------------------------------------
@@ -880,6 +946,8 @@ Everywhere
 Server list
   a  add server       e  edit       d  delete      J/K  move down/up
   s  interactive ssh  r  refresh    ?  this help
+  space  disable / enable: a disabled server is greyed out, not polled and
+         gets no ssh connection (disabled = 1 in servers.conf)
   t  group headings on/off for this session (start value: group_headings)
   f  temperature in ${SC_G_DEG}C / ${SC_G_DEG}F for this session (start value: temp_unit)
   With groups: sorted by group and name; J/K reorders only without groups.
@@ -888,7 +956,7 @@ Server list
 
 Server detail
   p  processes        s  ssh        x  snippets    e  edit server
-  m  modules (Docker) r  refresh
+  m  modules (Docker) r  refresh     space  disable / enable
   Up/Down, j/k        scroll one row        PgUp/PgDn        scroll one page
   Home/End, g/G       top / bottom          position shown at bottom right
 

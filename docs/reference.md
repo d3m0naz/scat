@@ -110,7 +110,7 @@ network rates; the status page says so instead of showing numbers.
 ```sh
 scat                    # interactive TUI
 scat --list             # print configured servers
-scat --check web1       # one-shot metrics summary; exit 0 if reachable
+scat --check web1       # one-shot metrics summary; exit 0 if reachable, 1 if disabled (not contacted)
 scat --config-dir DIR   # use another config directory
 scat --help | --version
 ```
@@ -145,8 +145,8 @@ be an alias defined there.
 | Where | Keys |
 |---|---|
 | Everywhere | `↑`/`↓` or `j`/`k` move · `PgUp`/`PgDn` · `g`/`G` top/bottom · `Enter` open · `Esc`/`q` back · `Ctrl-C` quit · `Ctrl-Z` suspend |
-| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `t` group headings on/off (this session) · `f` °C/°F (this session) · `?` help · `q`/`Esc` quit |
-| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules (Docker) · `r` refresh · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
+| Server list | `a` add · `e` edit · `d` delete · `J`/`K` move down/up · `s` ssh shell · `r` refresh now · `t` group headings on/off (this session) · `f` °C/°F (this session) · `Space` disable/enable the server · `?` help · `q`/`Esc` quit |
+| Server detail | `p`/`Enter` processes · `s` ssh · `x` snippets · `e` edit · `m` modules (Docker) · `r` refresh · `Space` disable/enable · `↑`/`↓` scroll one row · `PgUp`/`PgDn` one page · `Home`/`End` or `g`/`G` top/bottom |
 | Processes | `c`/`m`/`p`/`n` sort by CPU/memory/PID/name · `K` send SIGTERM (asks first) · `r` refresh |
 | Snippets | `Enter` run on the current server (asks first) · `a`/`e`/`d` add/edit/delete |
 | Docker | `↑`/`↓` move · `r` refresh now · `Esc` back (no actions) |
@@ -195,6 +195,15 @@ group = production
 | `identity` | optional private key file (never a password) |
 | `jump` | optional ProxyJump, `[user@]host[:port]`, comma-separated chains |
 | `group` | optional group; the list shows servers under group headings |
+| `disabled` | optional, `1` = disabled (`Space` in the list sets it); `0` or no key = enabled |
+
+A disabled server stays in its place in the list, greyed out with `×` (`x`
+in ASCII mode), `off` in the PING column, `-` in the value columns and
+`disabled` as status. scat does not poll or ping it and opens no ssh
+connection to it, also not for Docker or drives; disabling closes its
+ControlMaster connection. The detail view only shows the state; `s`, `p`,
+`x`, `m` and `r` give a notice instead. After `Space` again it is polled from
+the next refresh on. The edit form keeps the setting.
 
 Section names (server names) are 1–32 characters: `A-Z a-z 0-9 . _ -`.
 
@@ -399,6 +408,7 @@ Interfaces that are physical but down are still listed (with 0.00 MB/s).
 | Feature | Status |
 |---|---|
 | Server list with add / edit / delete / reorder, group headings, persisted | ✅ |
+| Disable a server (`Space`): not polled, no ssh, greyed out | ✅ |
 | Live status per server (online, CPU %, memory %, load, uptime, OS) | ✅ |
 | Detail view: CPU (user/sys/iowait), memory, swap, load, disks, rx/tx per physical network interface in MB/s, top processes | ✅ |
 | CPU temperature in the list and the detail view (°C/°F) | ✅ |

@@ -43,7 +43,8 @@ Without options the interactive TUI starts.
 Options:
   -l, --list            print configured servers and exit
   -c, --check NAME      collect metrics for one server, print a summary;
-                        exit status 0 if it is reachable
+                        exit status 0 if it is reachable (1 if it is
+                        disabled; it is not contacted then)
       --config-dir DIR  use DIR instead of ${SC_CONFIG_DIR_DEFAULT/#$HOME/\~}
       --theme NAME      color theme for this run (overrides settings.conf):
                         ${SC_SET_CHOICES[theme]// /, }

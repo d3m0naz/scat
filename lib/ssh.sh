@@ -79,16 +79,45 @@ sc_ssh_build_for() {
         "${SC_SRV[$name|user]}" "${SC_SRV[$name|identity]}" "${SC_SRV[$name|jump]}"
 }
 
+# Asks the ControlMaster of server $1 to exit (`ssh -O exit` only talks to
+# the local socket; it opens no connection). Nothing to do without multiplex.
+sc_ssh_close_master() {
+    local name=$1
+    [[ ${SC_SET[multiplex]} == 1 && -n $SC_RUNTIME_DIR ]] || return 0
+    compgen -G "$SC_RUNTIME_DIR/cm-*" >/dev/null || return 0
+    sc_ssh_build_for "$name" batch || return 0
+    ssh "${SC_SSH_OPTS[@]}" -O exit -- "${SC_SRV[$name|host]}" </dev/null >/dev/null 2>&1
+    return 0
+}
+
 sc_ssh_close_masters() {
     local name pids=()
     [[ ${SC_SET[multiplex]} == 1 ]] || return 0
     compgen -G "$SC_RUNTIME_DIR/cm-*" >/dev/null || return 0
     for name in "${SC_SERVERS[@]}"; do
-        sc_ssh_build_for "$name" batch || continue
-        ssh "${SC_SSH_OPTS[@]}" -O exit -- "${SC_SRV[$name|host]}" </dev/null >/dev/null 2>&1 &
+        sc_ssh_close_master "$name" &
         pids+=($!)
     done
     ((${#pids[@]})) && wait "${pids[@]}" 2>/dev/null
+}
+
+# Stops everything that talks to server $1: running fetch and ping jobs,
+# module jobs (hook "disable") and its ControlMaster. Its metrics and ping
+# value are dropped, so the list shows no stale values.
+sc_server_stop() {
+    local name=$1 pid
+    for pid in "${SC_FETCH_PID[$name]-}" "${SC_PING_PID[$name]-}"; do
+        [[ -n $pid ]] || continue
+        pkill -TERM -P "$pid" 2>/dev/null
+        kill -TERM "$pid" 2>/dev/null
+    done
+    unset "SC_FETCH_PID[$name]" "SC_PING_PID[$name]" "SC_PING[$name]"
+    if [[ -n $SC_RUNTIME_DIR ]]; then
+        rm -f -- "$SC_RUNTIME_DIR/$name.new" "$SC_RUNTIME_DIR/$name.res" "$SC_RUNTIME_DIR/$name.ping"
+    fi
+    declare -F sc_modules_hook >/dev/null && sc_modules_hook disable "$name"
+    sc_ssh_close_master "$name"
+    sc_metrics_clear "$name"
 }
 
 # Runs local script file $3 on server $1 via `sh -s`, killed after $2 seconds.
@@ -96,6 +125,12 @@ sc_ssh_close_masters() {
 # 125 if the server entry itself is invalid.
 sc_ssh_run_script() {
     local name=$1 secs=$2 script=$3 out=$4 err=$5
+    # A disabled server gets no connection, whichever module asks.
+    if sc_server_disabled "$name"; then
+        printf 'server is disabled\n' >"$err"
+        : >"$out"
+        return 125
+    fi
     if ! sc_ssh_build_for "$name" batch; then
         printf '%s\n' "$SC_ERR" >"$err"
         : >"$out"
@@ -157,11 +192,13 @@ sc_fetch_metrics() {
     rm -f -- "$res.body" "$res.err"
 }
 
-# Starts a background fetch unless one is already running for that server.
-# Completion is signalled by a "<name>.new" marker picked up by sc_poll_results.
+# Starts a background fetch unless one is already running for that server
+# or it is disabled. Completion is signalled by a "<name>.new" marker picked
+# up by sc_poll_results.
 sc_fetch_async() {
     local name=$1 pid=${SC_FETCH_PID[$1]-}
     [[ -n $SC_RUNTIME_DIR ]] || return 1
+    sc_server_disabled "$name" && return 0
     if [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null; then
         return 0
     fi
@@ -174,9 +211,20 @@ sc_fetch_async() {
     SC_M[$name|loading]=1
 }
 
+# Fetches all servers except the disabled ones.
 sc_fetch_all() {
     local name
-    for name in "${SC_SERVERS[@]}"; do sc_fetch_async "$name"; done
+    sc_servers_enabled
+    for name in "${SC_ENABLED[@]}"; do sc_fetch_async "$name"; done
+}
+
+# Removes entry $2 from job table $1 (SC_FETCH_PID, SC_PING_PID) unless
+# that job is still running.
+sc_job_done() {
+    local -n jobs=$1
+    local pid=${jobs[$2]-}
+    [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null && return 0
+    unset "jobs[$2]"
 }
 
 # Loads finished background results (metrics and pings); returns 0 if
@@ -188,8 +236,14 @@ sc_poll_results() {
         name=${f##*/}
         name=${name%.new}
         rm -f -- "$f"
-        unset "SC_FETCH_PID[$name]"
+        # A new fetch may have started since this one finished; keep its PID.
+        sc_job_done SC_FETCH_PID "$name"
         sc_server_exists "$name" || continue
+        # Disabled while the fetch was running: drop the late result.
+        if sc_server_disabled "$name"; then
+            rm -f -- "$SC_RUNTIME_DIR/$name.res"
+            continue
+        fi
         sc_metrics_load "$name" "$SC_RUNTIME_DIR/$name.res"
         changed=0
     done
@@ -197,8 +251,8 @@ sc_poll_results() {
         [[ -e $f ]] || continue
         name=${f##*/}
         name=${name%.ping}
-        unset "SC_PING_PID[$name]"
-        if sc_server_exists "$name"; then
+        sc_job_done SC_PING_PID "$name"
+        if sc_server_exists "$name" && ! sc_server_disabled "$name"; then
             IFS= read -r SC_PING[$name] <"$f"
             sc_sanitize "${SC_PING[$name]}"
             SC_PING[$name]=$REPLY
@@ -257,6 +311,7 @@ sc_ping_host() {
 sc_ping_async() {
     local name=$1 pid=${SC_PING_PID[$1]-}
     [[ -n $SC_RUNTIME_DIR ]] || return 1
+    sc_server_disabled "$name" && return 0
     if [[ -n ${SC_SRV[$name|jump]-} ]]; then
         SC_PING[$name]=jump
         return 0
@@ -273,9 +328,11 @@ sc_ping_async() {
     SC_PING_PID[$name]=$!
 }
 
+# Pings all servers except the disabled ones.
 sc_ping_all() {
     local name
-    for name in "${SC_SERVERS[@]}"; do sc_ping_async "$name"; done
+    sc_servers_enabled
+    for name in "${SC_ENABLED[@]}"; do sc_ping_async "$name"; done
 }
 
 sc_metrics_clear() {
@@ -319,6 +376,10 @@ sc_metrics_online() {
 # host key or for a key passphrase. Nothing typed here is stored.
 sc_ssh_interactive() {
     local name=$1 rc
+    if sc_server_disabled "$name"; then
+        SC_ERR="server is disabled, press space to enable"
+        return 1
+    fi
     sc_ssh_build_for "$name" interactive || return 1
     sc_ui_leave
     printf '\nConnecting to %s - exit the remote shell to return to scat.\n\n' "$name"

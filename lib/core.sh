@@ -289,6 +289,13 @@ sc_valid_command() {
     return 1
 }
 
+# 0 or 1, e.g. the disabled key of a server.
+sc_valid_flag() {
+    [[ $1 == [01] ]] && return 0
+    SC_ERR="must be 0 or 1 (got '$1')"
+    return 1
+}
+
 sc_valid_int() {
     [[ $1 =~ ^[0-9]{1,6}$ ]] && ((10#$1 >= $2 && 10#$1 <= $3)) && return 0
     SC_ERR="must be a whole number between $2 and $3"

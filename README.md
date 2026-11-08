@@ -94,6 +94,7 @@ SSH shell on it. `q` goes back.
 | `p` | all processes |
 | `m` | Docker view (if the server has Docker) |
 | `t` / `f` | group headings on/off, °C/°F (for this session) |
+| `Space` | disable / enable a server (no polling, no SSH) |
 | `?` | help, with every key |
 
 The full list is in the [reference](docs/reference.md#keybindings).

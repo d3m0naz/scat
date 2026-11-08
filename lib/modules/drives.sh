@@ -208,7 +208,7 @@ mod_drives_poll() {
         name=${f##*/}
         name=${name%.drives}
         unset "MOD_DRIVES_PID[$name]"
-        if sc_server_exists "$name"; then
+        if sc_server_exists "$name" && ! sc_server_disabled "$name"; then
             mod_drives_load "$name" "$f"
             changed=0
         fi
@@ -220,7 +220,7 @@ mod_drives_poll() {
 # Starts a query of server $1 if it is online and the last one is older
 # than drives_refresh.
 mod_drives_due() {
-    ((${SC_SET[drives]:-1})) && sc_metrics_online "$1" &&
+    ((${SC_SET[drives]:-1})) && ! sc_server_disabled "$1" && sc_metrics_online "$1" &&
         ((EPOCHSECONDS - ${MOD_DRIVES_LAST[$1]:-0} >= ${SC_SET[drives_refresh]:-300})) &&
         mod_drives_async "$1"
 }
@@ -245,6 +245,20 @@ mod_drives_detail_tick() {
 mod_drives_detail_refresh() {
     MOD_DRIVES_LAST[$1]=0
     unset "MOD_DRIVES_NOSTANDBY[$1]"
+}
+
+# Server $1 was disabled: stop its query and forget its drives.
+mod_drives_disable() {
+    local pid=${MOD_DRIVES_PID[$1]-} key
+    if [[ -n $pid ]]; then
+        pkill -TERM -P "$pid" 2>/dev/null
+        kill -TERM "$pid" 2>/dev/null
+    fi
+    unset "MOD_DRIVES_PID[$1]" "MOD_DRIVES_LAST[$1]" "MOD_DRIVES_NOSTANDBY[$1]"
+    for key in "${!MOD_DRIVES[@]}"; do
+        [[ $key == "$1|"* ]] && unset "MOD_DRIVES[$key]"
+    done
+    return 1
 }
 
 mod_drives_cleanup() {

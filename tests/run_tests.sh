@@ -985,6 +985,198 @@ eq "invalid values: warnings, defaults kept" "1 1|settings.conf:2: ping must be 
 eq "settings.conf template documents both" 2 "$(sc_config_emit_default_settings | grep -cE '^# (ping|group_headings) = 1$')"
 
 # ------------------------------------------------------------------------------
+section "disabled servers (disabled = 1: greyed out, not polled, no ssh)"
+SC_SERVERS=() SC_SRV=() SC_M=() SC_PING=() SC_FETCH_PID=() SC_PING_PID=()
+cat >"$SC_SERVERS_FILE" <<'EOF'
+[on1]
+host = 192.0.2.21
+
+[off1]
+host = 192.0.2.22
+group = lab
+disabled = 1
+
+[zero]
+host = 192.0.2.23
+disabled = 0
+
+[bad]
+host = 192.0.2.24
+disabled = yes
+EOF
+SC_CONFIG_WARNINGS=()
+sc_config_load_servers
+assert "disabled = 1 is read" sc_server_disabled off1
+refute "no key: enabled" sc_server_disabled on1
+refute "disabled = 0: enabled" sc_server_disabled zero
+refute "invalid value: enabled" sc_server_disabled bad
+eq "invalid value: one warning" "servers.conf:15: [bad] disabled ignored: must be 0 or 1 (got 'yes')" "${SC_CONFIG_WARNINGS[*]}"
+sc_config_save_servers
+eq "saved: only disabled = 1 is written" "1|off1" \
+    "$(grep -c '^disabled' "$SC_SERVERS_FILE")|$(awk '/^\[/{s=$0} /^disabled = 1$/{print substr(s,2,length(s)-2)}' "$SC_SERVERS_FILE")"
+eq "saved: mode 600" 600 "$(perm "$SC_SERVERS_FILE")"
+SC_CONFIG_WARNINGS=()
+sc_config_load_servers
+assert "round trip keeps the flag" sc_server_disabled off1
+eq "round trip: no warnings" 0 "${#SC_CONFIG_WARNINGS[@]}"
+assert "edit (form values) keeps the flag" sc_server_upsert off1 off1 192.0.2.32 "" "" "" "" lab
+assert "  ... flag still set after the edit" sc_server_disabled off1
+assert "rename keeps the flag" sc_server_upsert off1 off2 192.0.2.32 "" "" "" "" lab
+sc_config_load_servers
+eq "  ... under the new name, old keys gone" "1|" "${SC_SRV[off2|disabled]-}|${SC_SRV[off1|disabled]-}"
+eq "  ... same position" "on1 off2 zero bad" "${SC_SERVERS[*]}"
+assert "new server starts enabled" sc_server_upsert "" new1 192.0.2.25 "" "" "" "" ""
+refute "  ... not disabled" sc_server_disabled new1
+assert "set_disabled 1" sc_server_set_disabled on1 1
+eq "  ... written to the file" 1 "$(awk '/^\[on1\]/{s=1;next} /^\[/{s=0} s&&/^disabled = 1$/' "$SC_SERVERS_FILE" | grep -c .)"
+assert "set_disabled 0" sc_server_set_disabled on1 0
+eq "  ... key removed from the file" 0 "$(awk '/^\[on1\]/{s=1;next} /^\[/{s=0} s&&/^disabled/' "$SC_SERVERS_FILE" | grep -c .)"
+refute "set_disabled rejects other values" sc_server_set_disabled on1 2
+refute "set_disabled: unknown server" sc_server_set_disabled nope 1
+eq "no temp files left in the config dir" 0 "$(ls -A "$SC_CONFIG_DIR" | grep -c '^\.servers')"
+assert "delete a disabled server" sc_server_delete off2
+eq "  ... its flag is gone" "" "${SC_SRV[off2|disabled]-}"
+assert "re-add under the same name: enabled" sc_server_upsert "" off2 192.0.2.32 "" "" "" "" lab
+refute "  ... not disabled" sc_server_disabled off2
+
+# Filter: fetch and ping lists skip disabled servers.
+SC_SERVERS=() SC_SRV=() SC_M=() SC_PING=() SC_FETCH_PID=() SC_PING_PID=()
+sc_server_upsert "" a1 192.0.2.41 "" "" "" "" "" >/dev/null
+sc_server_upsert "" d1 192.0.2.42 "" "" "" "" "" >/dev/null
+sc_server_upsert "" a2 192.0.2.43 "" "" "" "" "" >/dev/null
+sc_server_upsert "" d2 192.0.2.44 "" "" "" a1 "" >/dev/null
+sc_server_set_disabled d1 1
+sc_server_set_disabled d2 1
+sc_servers_enabled
+eq "enabled servers in config order" "a1 a2" "${SC_ENABLED[*]}"
+eq "sc_fetch_all asks only for enabled servers" "a1 a2" \
+    "$(calls=(); sc_fetch_async() { calls+=("$1"); }; sc_fetch_all; printf '%s' "${calls[*]}")"
+eq "sc_ping_all asks only for enabled servers" "a1 a2" \
+    "$(calls=(); sc_ping_async() { calls+=("$1"); }; sc_ping_all; printf '%s' "${calls[*]}")"
+eq "all disabled: empty lists" "" \
+    "$(calls=(); sc_fetch_async() { calls+=("$1"); }; SC_SRV[a1|disabled]=1 SC_SRV[a2|disabled]=1; sc_fetch_all; printf '%s' "${calls[*]}")"
+
+# A fake ssh in PATH records every call; nothing may reach it for d1.
+mkdir -p "$TMP/fakessh"
+cat >"$TMP/fakessh/ssh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$FAKESSH_LOG"
+cat >/dev/null
+exit 0
+EOF
+chmod +x "$TMP/fakessh/ssh"
+export FAKESSH_LOG=$TMP/fakessh.log
+: >"$FAKESSH_LOG"
+sc_runtime_init
+PATH=$TMP/fakessh:$TMP/fakeping:$PATH sc_fetch_async d1
+PATH=$TMP/fakessh:$TMP/fakeping:$PATH sc_ping_async d1
+PATH=$TMP/fakessh:$TMP/fakeping:$PATH sc_ping_async d2
+eq "fetch of a disabled server: no job, not loading" "|" "${SC_FETCH_PID[d1]-}|${SC_M[d1|loading]-}"
+eq "ping of a disabled server: no job, no value" "||" "${SC_PING_PID[d1]-}|${SC_PING[d1]-}|${SC_PING[d2]-}"
+PATH=$TMP/fakessh:$PATH sc_ssh_run_script d1 5 /dev/null "$TMP/rs.out" "$TMP/rs.err"
+eq "sc_ssh_run_script refuses a disabled server (125)" "125|server is disabled" "$?|$(<"$TMP/rs.err")"
+sc_ssh_error_summary 125 "$TMP/rs.err" 5
+eq "  ... message as shown by modules" "server is disabled" "$REPLY"
+eq "  ... ssh was never called" 0 "$(grep -c . "$FAKESSH_LOG")"
+refute "interactive ssh refuses a disabled server" sc_ssh_interactive d1
+eq "  ... with the notice" "server is disabled, press space to enable" "$SC_ERR"
+
+# Late results of a server that was disabled meanwhile are dropped.
+printf 'rc=0\nts=1\ncpu_busy=55\n' >"$SC_RUNTIME_DIR/d1.res"
+: >"$SC_RUNTIME_DIR/d1.new"
+printf '9 ms\n' >"$SC_RUNTIME_DIR/d1.ping"
+sc_poll_results
+eq "late fetch and ping results of a disabled server dropped" "||0" \
+    "${SC_M[d1|rc]-}|${SC_PING[d1]-}|$(ls -A "$SC_RUNTIME_DIR" | grep -c '^d1\.')"
+
+# A result that arrives after the next fetch started must not drop the PID
+# of the new job (else disabling could not stop it).
+sleep 30 & npid=$!
+disown "$npid"
+SC_FETCH_PID[a1]=$npid
+printf 'rc=1\nts=1\nerr=x\n' >"$SC_RUNTIME_DIR/a1.res"
+: >"$SC_RUNTIME_DIR/a1.new"
+sc_poll_results
+eq "old result loaded, PID of the running new fetch kept" "1|$npid" "${SC_M[a1|rc]-}|${SC_FETCH_PID[a1]-}"
+kill "$npid" 2>/dev/null
+: >"$SC_RUNTIME_DIR/a1.new"
+sleep 0.1
+sc_poll_results
+eq "finished job: PID removed" "" "${SC_FETCH_PID[a1]-}"
+
+# Disabling: running jobs stop, the ControlMaster of that one server closes.
+SC_SET[multiplex]=1
+: >"$SC_RUNTIME_DIR/cm-fake"
+sleep 30 & fpid=$!
+sleep 30 & ppid=$!
+disown "$fpid" "$ppid"
+SC_FETCH_PID[a2]=$fpid SC_PING_PID[a2]=$ppid
+SC_M[a2|rc]=0 SC_M[a2|cpu_busy]=42 SC_PING[a2]="3 ms"
+: >"$FAKESSH_LOG"
+PATH=$TMP/fakessh:$PATH sc_server_toggle_disabled a2
+eq "toggle disables, message" "Disabled 'a2': not polled, connection closed" "$REPLY"
+assert "  ... saved" grep -q '^disabled = 1$' "$SC_SERVERS_FILE"
+sleep 0.2
+alive() { kill -0 "$1" 2>/dev/null; }
+refute "  ... running fetch job stopped" alive "$fpid"
+refute "  ... running ping job stopped" alive "$ppid"
+eq "  ... job table, metrics and ping value cleared" "|||" \
+    "${SC_FETCH_PID[a2]-}|${SC_PING_PID[a2]-}|${SC_M[a2|rc]-}|${SC_PING[a2]-}"
+eq "  ... exactly one ssh call: -O exit for a2" "1|1" \
+    "$(grep -c . "$FAKESSH_LOG")|$(grep -c -- '-O exit -- 192.0.2.43$' "$FAKESSH_LOG")"
+SC_SRV[a2|disabled]=
+: >"$FAKESSH_LOG"
+(SC_SET[multiplex]=0; PATH=$TMP/fakessh:$PATH sc_server_toggle_disabled a2)
+eq "multiplex = 0: no ssh -O exit" 0 "$(grep -c . "$FAKESSH_LOG")"
+SC_SRV[a2|disabled]=1
+: >"$FAKESSH_LOG"
+PATH=$TMP/fakessh:$PATH sc_server_toggle_disabled a2
+eq "toggle enables, message" "Enabled 'a2'; polled again from the next refresh" "$REPLY"
+refute "  ... flag cleared" sc_server_disabled a2
+eq "  ... no ssh and no job during the toggle" "0|" "$(grep -c . "$FAKESSH_LOG")|${SC_FETCH_PID[a2]-}"
+eq "  ... next refresh polls it again" "a1 a2" \
+    "$(calls=(); sc_fetch_async() { calls+=("$1"); }; sc_fetch_all; printf '%s' "${calls[*]}")"
+rm -f -- "$SC_RUNTIME_DIR/cm-fake"
+sc_runtime_cleanup
+
+# Drawing: greyed out, "-" in the metric cells, "off" for PING, "disabled".
+SC_SERVERS=() SC_SRV=() SC_M=() SC_PING=()
+sc_server_upsert "" live 192.0.2.51 "" "" "" "" "" >/dev/null
+sc_server_upsert "" sleepy 192.0.2.52 "" "" "" "" "" >/dev/null
+sc_server_set_disabled sleepy 1
+SC_M[live|rc]=0 SC_M[live|cpu_busy]=12 SC_M[live|mem_used]=50 SC_M[live|mem_total]=100 SC_M[live|load]="0.50 0.4 0.3" SC_M[live|uptime]=3600 SC_M[live|os]=Linux
+SC_M[sleepy|rc]=0 SC_M[sleepy|cpu_busy]=99 SC_M[sleepy|load]="9.99"
+SC_PING[live]="4 ms" SC_PING[sleepy]="7 ms"
+sc_list_build
+frame=$(list_frame 24 80 0 0)
+eq "enabled row unchanged" "▶● live                4 ms   12%     -   50%   0.50    1h 0m Linux" \
+    "$(sed -n 3p <<<"$frame" | sed 's/ *$//')"
+eq "disabled row: ×, -, off, disabled" " × sleepy               off     -     -     -      -        - disabled" \
+    "$(sed -n 4p <<<"$frame" | sed 's/ *$//')"
+eq "disabled row: no stale values" 0 "$(sed -n 4p <<<"$frame" | grep -cE '99|9\.99|7 ms')"
+eq "80 columns: no row wider than 80" 0 "$(while IFS= read -r l; do ((${#l} > 80)) && echo x; done <<<"$frame" | grep -c x)"
+eq "name and cells of the disabled row are dimmed" 1 \
+    "$(sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }; SC_ROWS=24 SC_COLS=80; sc_draw_servers 0 0 | grep -cF "${C_DIM}sleepy")"
+eq "ASCII mode: readable marker x" " x sleepy" \
+    "$(SC_SET[ascii]=1; sc_glyphs_init; list_frame 24 80 0 0 | sed -n 4p | cut -c 1-9)"
+sc_glyphs_init
+eq "footer still exactly 80 columns" 80 "$(list_frame 24 80 0 0 | tail -n 1 | wc -m | tr -d ' ' | awk '{print $1-1}')"
+detail_disabled=$( (
+    sc_ui_render() { printf '%s\n' "${SC_FRAME[@]}"; }
+    SC_ROWS=24 SC_COLS=80
+    sc_draw_detail sleepy
+) | sed $'s/\e\\[[0-9;]*[mK]//g')
+eq "detail: status disabled" 1 "$(sed -n 1p <<<"$detail_disabled" | grep -c 'disabled *$')"
+eq "detail: explains the state" 1 "$(grep -c 'Disabled: not polled, no ssh connections.' <<<"$detail_disabled")"
+eq "detail: no stale metrics" 0 "$(grep -cE 'CPU|Processes|99' <<<"$detail_disabled")"
+eq "detail: footer offers space / e / esc" "space enable  e edit  esc back" \
+    "$(tail -n 1 <<<"$detail_disabled" | sed 's/^ *//;s/ *$//')"
+eq "help lists space" 2 "$(sc_view_pager() { printf '%s\n' "${SC_PAGER_LINES[@]}"; }; sc_view_help | grep -c 'space  disable')"
+: >"$FAKESSH_LOG"
+eq "--check on a disabled server: status 1, not contacted" "1|sleepy (192.0.2.52): disabled - not checked (disabled = 1 in servers.conf)|0" \
+    "$(out=$(PATH=$TMP/fakessh:$PATH sc_cli_check sleepy); printf '%s|%s|%s' "$?" "$out" "$(grep -c . "$FAKESSH_LOG")")"
+
+# ------------------------------------------------------------------------------
 section "CPU temperature (collector with fake /sys, display, key f)"
 eq "temp_unit defaults to c" c "${SC_SET[temp_unit]}"
 # Fake /sys trees after real hosts: $1 = directory, then "zone TYPE MILLI"
@@ -1561,6 +1753,25 @@ grep -E 'smartctl ' "$SC_ROOT/lib/remote/drives.sh" | grep -v '^ *#' | grep -oE 
     nok "remote script only runs smartctl --scan, -A and -n standby -A" || ok "remote script only runs smartctl --scan, -A and -n standby -A"
 sc_runtime_cleanup
 sc_metrics_clear dock
+
+# Disabled servers and the modules (hook "disable", no queries).
+SC_SERVERS=() SC_SRV=() SC_M=()
+sc_server_upsert "" m1 192.0.2.61 "" "" "" "" "" >/dev/null
+SC_M[m1|rc]=0 SC_M[m1|docker]=1
+MOD_DOCKER[m1|rc]=0 MOD_DOCKER_LAST[m1]=5 MOD_DRIVES[m1|rc]=0 MOD_DRIVES[m1|warn]=1 MOD_DRIVES_LAST[m1]=5
+sc_server_set_disabled m1 1
+sc_server_stop m1
+eq "disable hook: docker and drives data of the server dropped" "||||" \
+    "${MOD_DOCKER[m1|rc]-}|${MOD_DOCKER_LAST[m1]-}|${MOD_DRIVES[m1|rc]-}|${MOD_DRIVES[m1|warn]-}|${MOD_DRIVES_LAST[m1]-}"
+SC_M[m1|rc]=0 SC_M[m1|docker]=1
+eq "drives: no query for a disabled server, even if it looks online" "" \
+    "$(mod_drives_async() { echo called; }; mod_drives_due m1)"
+eq "docker: no query for a disabled server, even if it looks online" "" \
+    "$(mod_docker_async() { echo called; }; mod_docker_detail_tick m1)"
+SC_SRV[m1|disabled]=
+eq "  ... and both query again once it is enabled" "called|called" \
+    "$(mod_drives_async() { echo called; }; mod_drives_due m1)|$(mod_docker_async() { echo called; }; mod_docker_detail_tick m1)"
+
 # ------------------------------------------------------------------------------
 section "version consistency (scat, website, installer)"
 site=$SC_ROOT/docs/index.html

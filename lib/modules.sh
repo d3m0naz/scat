@@ -32,6 +32,9 @@
 #   mod_<id>_list_status NAME status 0 if the STATUS cell of the server list
 #                             should show REPLY instead of the OS, in colour
 #                             SC_MOD_STATUS_C (first module wins)
+#   mod_<id>_disable NAME     server NAME was disabled: stop its background
+#                             jobs and drop its data (it is queried again
+#                             from scratch once enabled)
 #   mod_<id>_cleanup          on exit: stop background jobs
 
 declare -ga SC_MODULES=() SC_MODULES_AVAIL=()

@@ -269,7 +269,7 @@ mod_docker_poll() {
         name=${f##*/}
         name=${name%.docker}
         unset "MOD_DOCKER_PID[$name]"
-        if sc_server_exists "$name"; then
+        if sc_server_exists "$name" && ! sc_server_disabled "$name"; then
             mod_docker_load "$name" "$f"
             changed=0
         fi
@@ -298,7 +298,7 @@ mod_docker_available() {
 mod_docker_detail_tick() {
     local name=$1 changed=1
     mod_docker_poll && changed=0
-    if [[ ${SC_M[$name|docker]-} == 1 ]] && sc_metrics_online "$name" &&
+    if [[ ${SC_M[$name|docker]-} == 1 ]] && ! sc_server_disabled "$name" && sc_metrics_online "$name" &&
         ((EPOCHSECONDS - ${MOD_DOCKER_LAST[$name]:-0} >= MOD_DOCKER_REFRESH)); then
         mod_docker_async "$name" full
     fi
@@ -307,6 +307,20 @@ mod_docker_detail_tick() {
 
 mod_docker_detail_refresh() {
     MOD_DOCKER_LAST[$1]=0
+}
+
+# Server $1 was disabled: stop its query and forget its containers.
+mod_docker_disable() {
+    local pid=${MOD_DOCKER_PID[$1]-} key
+    if [[ -n $pid ]]; then
+        pkill -TERM -P "$pid" 2>/dev/null
+        kill -TERM "$pid" 2>/dev/null
+    fi
+    unset "MOD_DOCKER_PID[$1]" "MOD_DOCKER_LAST[$1]"
+    for key in "${!MOD_DOCKER[@]}"; do
+        [[ $key == "$1|"* ]] && unset "MOD_DOCKER[$key]"
+    done
+    return 1
 }
 
 mod_docker_cleanup() {

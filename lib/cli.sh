@@ -86,6 +86,11 @@ sc_cli_check() {
         sc_error "unknown server '$name' (see --list)"
         return 2
     fi
+    if sc_server_disabled "$name"; then
+        sc_server_target "$name"
+        printf '%s (%s): disabled - not checked (disabled = 1 in servers.conf)\n' "$name" "$REPLY"
+        return 1
+    fi
     sc_runtime_init || sc_die "cannot create runtime directory"
     trap 'sc_runtime_cleanup' EXIT
     sc_fetch_metrics "$name" "$SC_RUNTIME_DIR/$name.res"
