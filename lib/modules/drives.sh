@@ -251,8 +251,7 @@ mod_drives_detail_refresh() {
 mod_drives_disable() {
     local pid=${MOD_DRIVES_PID[$1]-} key
     if [[ -n $pid ]]; then
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     fi
     unset "MOD_DRIVES_PID[$1]" "MOD_DRIVES_LAST[$1]" "MOD_DRIVES_NOSTANDBY[$1]"
     for key in "${!MOD_DRIVES[@]}"; do
@@ -264,8 +263,7 @@ mod_drives_disable() {
 mod_drives_cleanup() {
     local pid
     for pid in "${MOD_DRIVES_PID[@]}"; do
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     done
     MOD_DRIVES_PID=()
 }

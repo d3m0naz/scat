@@ -1555,7 +1555,7 @@ dock full" "$(cat "$TMP/dk.ticks")"
     mod_docker_async dock ps
     pid=${MOD_DOCKER_PID[dock]}
     sc_runtime_cleanup
-    sleep 0.3
+    for _ in {1..50}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
     kill -0 "$pid" 2>/dev/null && echo running || echo stopped
 ) >"$TMP/dk.cleanup"
 eq "cleanup stops a running query" stopped "$(cat "$TMP/dk.cleanup")"

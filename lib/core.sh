@@ -290,6 +290,15 @@ sc_valid_command() {
 }
 
 # 0 or 1, e.g. the disabled key of a server.
+# Stops background job $1 and its children. The job gets TERM first: if it
+# is waiting for a child, bash runs its trap only after that child ends, so
+# the children are killed afterwards. The other order misses a child forked
+# between the two kills and leaves the job waiting on it.
+sc_job_kill() {
+    kill -TERM "$1" 2>/dev/null
+    pkill -TERM -P "$1" 2>/dev/null
+}
+
 sc_valid_flag() {
     [[ $1 == [01] ]] && return 0
     SC_ERR="must be 0 or 1 (got '$1')"

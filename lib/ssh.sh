@@ -35,8 +35,7 @@ sc_runtime_cleanup() {
     local pid
     [[ -n $SC_RUNTIME_DIR && -d $SC_RUNTIME_DIR ]] || return 0
     for pid in "${SC_FETCH_PID[@]}" "${SC_PING_PID[@]}"; do
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     done
     declare -F sc_modules_hook >/dev/null && sc_modules_hook cleanup
     sc_ssh_close_masters
@@ -108,8 +107,7 @@ sc_server_stop() {
     local name=$1 pid
     for pid in "${SC_FETCH_PID[$name]-}" "${SC_PING_PID[$name]-}"; do
         [[ -n $pid ]] || continue
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     done
     unset "SC_FETCH_PID[$name]" "SC_PING_PID[$name]" "SC_PING[$name]"
     if [[ -n $SC_RUNTIME_DIR ]]; then

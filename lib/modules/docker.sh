@@ -313,8 +313,7 @@ mod_docker_detail_refresh() {
 mod_docker_disable() {
     local pid=${MOD_DOCKER_PID[$1]-} key
     if [[ -n $pid ]]; then
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     fi
     unset "MOD_DOCKER_PID[$1]" "MOD_DOCKER_LAST[$1]"
     for key in "${!MOD_DOCKER[@]}"; do
@@ -326,8 +325,7 @@ mod_docker_disable() {
 mod_docker_cleanup() {
     local pid
     for pid in "${MOD_DOCKER_PID[@]}"; do
-        pkill -TERM -P "$pid" 2>/dev/null
-        kill -TERM "$pid" 2>/dev/null
+        sc_job_kill "$pid"
     done
     MOD_DOCKER_PID=()
 }
