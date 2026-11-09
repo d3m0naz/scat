@@ -74,7 +74,6 @@ sc_config_init() {
             return 1
         fi
     fi
-    chmod 700 "$SC_CONFIG_DIR" 2>/dev/null
     if [[ ! -e $SC_SERVERS_FILE ]]; then
         sc_config_save_servers || return 1
     fi

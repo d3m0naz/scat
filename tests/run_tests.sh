@@ -674,6 +674,12 @@ sc_fmt_kib 8000000; eq "gib" "7.6G" "$REPLY"
 sc_fmt_bytes 100; eq "bytes" "100B" "$REPLY"
 sc_pct 2000000 8000000; eq "percent" 25 "$REPLY"
 refute "percent of zero" sc_pct 1 0
+sc_pct 08 16; eq "percent with a leading zero (no octal)" 50 "$REPLY"
+sc_fmt_bytes 09; eq "bytes with a leading zero (no octal)" "9B" "$REPLY"
+eq "group headings: Prod and prod share one heading" 1 "$(
+    SC_SERVERS=(a b c); SC_SRV[a|group]=Prod; SC_SRV[b|group]=prod; SC_SRV[c|group]=Prod
+    SC_SET[group_headings]=1; sc_list_build
+    n=0; for k in "${SC_LIST_KIND[@]}"; do [[ $k == h ]] && ((n++)); done; echo "$n")"
 SC_G_ELL='…'
 sc_fit "äöü-umlaut" 5; eq "fit truncates by characters" "äöü-…" "$REPLY"
 sc_fit "ab" 4; eq "fit pads" "ab  " "$REPLY"
@@ -1577,10 +1583,12 @@ cat >"$DR/bin/smartctl" <<'EOF'
 standby=0
 [ "$1" = -n ] && { standby=1; shift 2; }
 [ "$1" = -A ] || exit 2
-d=${2##*/}
+shift
+[ "$1" = -d ] && shift 2
+d=${1##*/}
 if [ $standby = 1 ] && [ -e "$DR/$d.asleep" ]; then cat "$DFX/standby.txt"; exit 2; fi
 [ -e "$DR/$d.asleep" ] && echo "woke $d" >>"$DR/woken"
-cat "$DR/$d.txt" 2>/dev/null || { echo "Smartctl open device: $2 failed: No such device"; exit 2; }
+cat "$DR/$d.txt" 2>/dev/null || { echo "Smartctl open device: $1 failed: No such device"; exit 2; }
 EOF
 # Fake sudo -n: FAKESUDO_DENY refuses everything, FAKESUDO_NOSTANDBY only
 # the -n standby form; every call is logged.
@@ -1619,7 +1627,9 @@ drive=/dev/sdc|ST18000NM000J-2TV|HDD|18000207937536|standby
 drive=/dev/nvme0n1|Samsung SSD 980 1TB|NVMe|1000204886016|ok" "$(grep -v '^smart=' <<<"$out")"
 eq "remote: smartctl lines prefixed per disk (non-empty lines)" "13 0 16" \
     "$(grep -c '^smart=/dev/sda|' <<<"$out") $(grep -c '^smart=/dev/sdc|' <<<"$out") $(grep -c '^smart=/dev/nvme0n1|' <<<"$out")"
-eq "remote: asked with sudo -n and -n standby" "4 4" "$(grep -c '^-n smartctl -n standby -A /dev/' "$DR/sudo.log") $(wc -l <"$DR/sudo.log" | tr -d ' ')"
+eq "remote: asked with sudo -n and -n standby" "4 4" "$(grep -c '^-n smartctl -n standby -A -d [a-z]* /dev/' "$DR/sudo.log") $(wc -l <"$DR/sudo.log" | tr -d ' ')"
+eq "remote: the scan's -d type is passed on (sda scsi, nvme0 nvme)" "1 1" \
+    "$(grep -c '^-n smartctl -n standby -A -d scsi /dev/sda$' "$DR/sudo.log") $(grep -c '^-n smartctl -n standby -A -d nvme /dev/nvme0n1$' "$DR/sudo.log")"
 eq "remote: the sleeping disk was not woken" "" "$(cat "$DR/woken" 2>/dev/null)"
 rm -f "$DR/sudo.log" "$DR/woken"
 out=$(FAKESUDO_NOSTANDBY=1 drq)
