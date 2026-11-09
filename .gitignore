@@ -18,3 +18,4 @@ servers.conf
 
 # Local handoff notes between sessions (not for the repo)
 handoff-for-peer-sessions.md
+handover.md
