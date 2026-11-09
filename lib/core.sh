@@ -3,7 +3,7 @@
 # and number formatting, input validation and a timeout runner (macOS has no
 # coreutils `timeout`).
 
-SC_VERSION="0.3.0"
+SC_VERSION="0.3.1"
 SC_ERR=
 
 sc_die() {
