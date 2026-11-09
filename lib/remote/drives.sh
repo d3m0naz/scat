@@ -30,17 +30,28 @@ trap '[ "$errf" = /dev/null ] || rm -f "$errf"' EXIT
 if [ "$(id -u)" = 0 ]; then SUDO=; else SUDO="sudo -n"; fi
 
 # Whole disks: what `smartctl --scan` finds (no root needed) plus the usual
-# names. Linux NVMe controllers (/dev/nvme0) become their namespace
-# (/dev/nvme0n1), the form smartctl and sudo rules use.
+# names. Output is one "device<TAB>type" line per disk; type is the -d
+# argument from the scan (megaraid,0, sat, cciss,0 ...) or empty. Linux NVMe
+# controllers (/dev/nvme0) become their namespace (/dev/nvme0n1), the form
+# smartctl and sudo rules use.
 list_devs() {
     {
-        smartctl --scan 2>/dev/null | awk '$1 ~ /^\/dev\// { print $1 }'
-        for d in "$DEV_DIR"/sd[a-z] "$DEV_DIR"/sd[a-z][a-z] "$DEV_DIR"/nvme[0-9]n[0-9] \
-            "$DEV_DIR"/ada[0-9] "$DEV_DIR"/nvd[0-9] "$DEV_DIR"/nda[0-9] "$DEV_DIR"/da[0-9]; do
-            [ -e "$d" ] && echo "/dev/${d##*/}"
+        smartctl --scan 2>/dev/null | awk '$1 ~ /^\/dev\// { t = ""; if ($2 == "-d") t = $3; print $1 "\t" t }'
+        for d in "$DEV_DIR"/*; do
+            [ -e "$d" ] || continue
+            n=${d##*/}
+            case $n in
+            sd[a-z] | sd[a-z][a-z] | ada[0-9] | ada[0-9][0-9] | nvd[0-9] | nvd[0-9][0-9] | \
+                nda[0-9] | nda[0-9][0-9] | da[0-9] | da[0-9][0-9] | \
+                nvme[0-9] | nvme[0-9][0-9] | nvme[0-9]n[0-9] | nvme[0-9]n[0-9][0-9] | \
+                nvme[0-9][0-9]n[0-9] | nvme[0-9][0-9]n[0-9][0-9])
+                printf '/dev/%s\t\n' "$n" ;;
+            esac
         done
-    } | if [ "$os" = Linux ]; then sed 's|^\(/dev/nvme[0-9][0-9]*\)$|\1n1|'; else cat; fi |
-        awk '!seen[$0]++'
+    } | awk -F '\t' -v OFS='\t' -v linux="$([ "$os" = Linux ] && echo 1 || echo 0)" '
+        linux == 1 && $1 ~ /^\/dev\/nvme[0-9][0-9]*$/ { $1 = $1 "n1" }
+        !seen[$1]++
+    '
 }
 
 # "model|kind|bytes" of disk $1 (a name like sda), without root.
@@ -79,18 +90,24 @@ refused() {
 standby_ok=1
 [ "${NOSTANDBY-}" = 1 ] && standby_ok=0
 denied=0
-for dev in $(list_devs); do
+tab=$(printf '\t')
+devs=$(list_devs)
+# The list is read from fd 3, so smartctl and sudo cannot eat it.
+while IFS=$tab read -r dev dtype <&3; do
+    [ -n "$dev" ] || continue
     info=$(disk_info "${dev##*/}")
+    dopt=
+    [ -n "$dtype" ] && dopt="-d $dtype"
     access=ok out=
     if [ "$denied" = 1 ]; then
         access=denied
     else
         if [ "$standby_ok" = 1 ]; then
-            out=$($SUDO smartctl -n standby -A "$dev" 2>"$errf")
+            out=$($SUDO smartctl -n standby -A $dopt "$dev" 2>"$errf")
             if refused; then standby_ok=0; fi
         fi
         if [ "$standby_ok" = 0 ]; then
-            out=$($SUDO smartctl -A "$dev" 2>"$errf")
+            out=$($SUDO smartctl -A $dopt "$dev" 2>"$errf")
             access=wakes
             if refused; then access=denied denied=1 out=; fi
         fi
@@ -98,5 +115,7 @@ for dev in $(list_devs); do
     fi
     printf 'drive=%s|%s|%s\n' "$dev" "$info" "$access"
     [ -n "$out" ] && printf '%s\n' "$out" | sed -n "/./s|^|smart=$dev\||p"
-done
+done 3<<EOF
+$devs
+EOF
 exit 0

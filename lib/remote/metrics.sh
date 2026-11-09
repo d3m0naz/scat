@@ -307,7 +307,10 @@ Linux)
         echo "distro=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | sed 's/^"//; s/"$//' | head -n 1)"
     read -r up _ </proc/uptime && echo "uptime=${up%.*}"
     read -r l1 l2 l3 _ </proc/loadavg && echo "load=$l1 $l2 $l3"
-    echo "cores=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || nproc 2>/dev/null)"
+    # grep -c prints 0 and fails when cpuinfo has no processor lines: then ask nproc.
+    n=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null)
+    [ "${n:-0}" -gt 0 ] 2>/dev/null || n=$(nproc 2>/dev/null)
+    echo "cores=${n:-0}"
 
     phys=$(linux_phys_ifaces)
     c1=$(linux_cpu_sample)

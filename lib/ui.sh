@@ -328,6 +328,7 @@ sc_level_color() {
 sc_ui_bar() {
     local pct=$1 w=$2 fill full
     [[ $pct =~ ^[0-9]+$ ]] || pct=0
+    pct=$((10#$pct))
     ((pct > 100)) && pct=100
     fill=$(((pct * w + 50) / 100))
     sc_repeat "$SC_G_FULL" "$fill"

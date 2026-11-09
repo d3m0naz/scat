@@ -31,8 +31,9 @@ sc_list_build() {
     # "0group<TAB>name" for named groups, "1<TAB>name" for the rest, so that
     # ungrouped servers sort last. Names and groups contain no control chars.
     while IFS=$'\t' read -r g name; do
-        if ((SC_LIST_HEADINGS)) && [[ $g != "$last" ]]; then
-            last=$g
+        # sort -f folds case, so the headings must compare folded too.
+        if ((SC_LIST_HEADINGS)) && [[ ${g,,} != "$last" ]]; then
+            last=${g,,}
             SC_LIST_KIND+=(h)
             if [[ $g == 1 ]]; then SC_LIST_VAL+=(ungrouped); else SC_LIST_VAL+=("${g#0}"); fi
         fi
@@ -201,9 +202,9 @@ sc_view_servers() {
             d)
                 [[ -n $name ]] || continue
                 if sc_ui_confirm "Delete server '$name'?"; then
+                    # Stop jobs and the ControlMaster first: they need the entry.
+                    sc_server_stop "$name"
                     if sc_server_delete "$name"; then
-                        sc_metrics_clear "$name"
-                        unset "SC_PING[$name]"
                         sc_msg info "Deleted '$name'"
                         sc_list_build
                         sc_list_fix "$sel" 1; sel=$REPLY
@@ -1151,13 +1152,13 @@ sc_form_server_submit() {
             return 1
         fi
     done
+    # Stop the old entry before the upsert: its ControlMaster and jobs need the
+    # old host, and a fetch still running for it must not finish under the new one.
+    [[ -n $old ]] && sc_server_stop "$old"
     if ! sc_server_upsert "$old" "$new" "${SC_FORM_VAL[host]}" "${SC_FORM_VAL[port]}" \
         "${SC_FORM_VAL[user]}" "${SC_FORM_VAL[identity]}" "${SC_FORM_VAL[jump]}" "${SC_FORM_VAL[group]}"; then
         SC_FORM_ERRKEY=name
         return 1
-    fi
-    if [[ -n $old && $old != "$new" ]]; then
-        sc_metrics_clear "$old"
     fi
     sc_metrics_clear "$new"
     SC_FORM_RESULT=$new
